@@ -244,6 +244,8 @@ async def send_sms_code(
     if len(normalized_phone) != 11 or not normalized_phone.startswith("7"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный формат телефона РФ")
 
+    auth.user.phone = normalized_phone
+
     rate_key = f"send-code:sms:{auth.user.id}:{normalized_phone}"
     blocked, retry_after = await hit_rate_limit(
         key=rate_key,

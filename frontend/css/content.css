@@ -1,0 +1,430 @@
+/* Задания, FAQ, инструкции, уведомления */
+
+.content-page {
+  display: grid;
+  gap: 1rem;
+  animation: fade-in 0.35s ease-out;
+}
+
+.content-card {
+  padding: 1.25rem;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-soft);
+}
+
+.content-card__title {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+  color: #12313a;
+}
+
+.content-card__meta {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.content-card__body {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: #2a4450;
+}
+
+.content-card__body p {
+  margin: 0 0 0.75rem;
+}
+
+.content-empty {
+  margin: 0;
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(150deg, #f7fdff 0%, #ffffff 100%);
+  border: 1px dashed rgba(95, 219, 232, 0.5);
+}
+
+/* Условия акции — сетка карточек как на референсе */
+
+.news-page .news-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .news-page .news-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .news-page .news-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .news-page .news-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.news-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.news-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(95, 219, 232, 0.55);
+  box-shadow: 0 8px 24px rgba(18, 49, 58, 0.08);
+}
+
+.news-card__media {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: linear-gradient(135deg, rgba(95, 219, 232, 0.25), rgba(196, 59, 113, 0.2));
+  overflow: hidden;
+}
+
+.news-card__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.news-card__placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(18, 49, 58, 0.45);
+  text-transform: uppercase;
+}
+
+.news-card__body {
+  padding: 0.85rem 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.news-card__title {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  font-weight: 700;
+  color: #12313a;
+}
+
+.news-card__period {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+
+.news-card__footer {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.news-card__footer .btn--sm {
+  min-height: var(--touch-min);
+  padding: 0.5rem 1rem;
+  font-size: 0.88rem;
+}
+
+.news-card__date {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.news-detail {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.news-back {
+  min-height: var(--touch-min);
+  padding: 0.35rem 0.5rem;
+  border: none;
+  background: transparent;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a5f8a;
+  cursor: pointer;
+}
+
+.news-back:hover {
+  text-decoration: underline;
+}
+
+.news-detail__cover {
+  margin: -0.25rem -0.25rem 0.75rem;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  background: linear-gradient(135deg, rgba(95, 219, 232, 0.2), rgba(196, 59, 113, 0.15));
+}
+
+.news-detail__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.news-detail__card {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Условия акции — фильтр */
+
+.news-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.news-period-select {
+  min-height: var(--touch-min);
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: #fff;
+  font-size: 0.95rem;
+  color: #12313a;
+}
+
+.news-accept {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.news-accept__status {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #1a6b4a;
+  font-weight: 600;
+}
+
+.news-accept__status--done {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* FAQ */
+
+.faq-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.faq-item {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.faq-item--open {
+  border-color: rgba(95, 219, 232, 0.6);
+  box-shadow: var(--shadow-soft);
+}
+
+.faq-item__question {
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: none;
+  background: transparent;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #12313a;
+  text-align: left;
+  cursor: pointer;
+}
+
+.faq-item__icon {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: var(--color-icon);
+  transition: transform 0.2s ease;
+}
+
+.faq-item--open .faq-item__icon {
+  transform: rotate(180deg);
+}
+
+.faq-item__answer {
+  padding: 0 1rem 1rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: #2a4450;
+}
+
+.faq-item__answer[hidden] {
+  display: none;
+}
+
+/* Инструкции */
+
+.instructions-intro {
+  margin-bottom: 1rem;
+}
+
+.instructions-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.instruction-item {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: linear-gradient(150deg, #f7fdff 0%, #ffffff 100%);
+}
+
+.instruction-item__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #12313a;
+}
+
+.instruction-item__desc {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.instruction-item__link {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a5f8a;
+  text-decoration: none;
+}
+
+.instruction-item__link:hover {
+  text-decoration: underline;
+}
+
+/* Уведомления */
+
+.notifications-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notifications-summary {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.notifications-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.notification-card {
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.15s ease;
+}
+
+.notification-card:hover {
+  border-color: rgba(95, 219, 232, 0.55);
+  transform: translateY(-1px);
+}
+
+.notification-card--unread {
+  border-color: rgba(95, 219, 232, 0.65);
+  background: linear-gradient(150deg, #f0fcfe 0%, #ffffff 100%);
+}
+
+.notification-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.notification-card__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #12313a;
+}
+
+.notification-card__date {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.notification-card__message {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #2a4450;
+}
+
+.notification-card__badge {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-badge);
+}
+
+.content-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.5rem;
+}

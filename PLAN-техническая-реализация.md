@@ -4,7 +4,7 @@
 **Детали и история:** `ТЗ Курсор чат 2.md`  
 **Визуальный референс:** `reference_site фронери/_cursor_reference_*.md` (только UI, не бизнес-логика)
 
-**Статус:** план утверждён, код ещё не начат  
+**Статус:** в разработке (этапы 0–7 ✅, этап 8 🔄)  
 **Домен:** `plombirclub.ru` | **Стек:** FastAPI + PostgreSQL + Redis/Celery + HTML/CSS/JS + Docker Compose  
 **Объём:** полноценный сайт по ТЗ (раздел 20 приёмки), **31 подэтап = 31 чат Agent**
 
@@ -129,6 +129,7 @@ docker-compose.yml
 - **Без CASCADE** на финансовую историю и заявки
 - UNIQUE: `(user_id, material_id)`, `(user_id, task_id)`, `(admin_id, setting_key)`
 - Seed: 1 admin, 2 дистрибьютора, системный приз СБП, 8 шаблонов уведомлений, пустые контакты поддержки
+- **Миграция `0010` (доп.):** `tasks.cover_image_path`, демо-задания, дистрибьютор для `testuser@plombirclub.ru`
 
 **Критерий этапа 1:** миграции + seed на чистой БД.
 
@@ -160,7 +161,9 @@ docker-compose.yml
 - `/api/points`: balance, history, consent, activate
 
 ### Э4.2 — Задания (Agent)
-- `/api/tasks`: create, current, accept
+- `/api/tasks`: `GET /` (список; без `period_month` = все периоды), `GET /current`, `GET /{id}`, `POST /create`, `POST /create-with-cover` (обложка JPG/PNG), `POST /{id}/accept`
+- Поле `cover_image_path` в `Tasks`; файлы в `/uploads/`, nginx раздаёт статику
+- **Совместимость:** старые endpoints не удалены; импорт продаж и активация баллов используют одно задание на период (как раньше)
 
 ---
 
@@ -216,11 +219,16 @@ CSS: Mobile-first, 320–1920 px, touch 44×44 px.
 ### Э8.3 — Каталог призов (Agent+)
 - catalog + модалки «Получить» и «Получить по СБП»
 
-### Э8.4a — Задания, FAQ, инструкции, уведомления (Agent)
-- tasks, faq, instructions, notifications
+### Э8.4a — Задания, FAQ, инструкции, уведомления (Agent) ✅
+- **Условия акции** (`/pages/news.html`): сетка карточек как Froneri (обложка, заголовок, период, «Читать», дата); детальная страница; фильтр «Период» с **«Все периоды»** по умолчанию; API `GET /api/tasks`, `GET /api/tasks/{id}`
+- FAQ, instructions, notifications — отдельные страницы; счётчик непрочитанных уведомлений в меню
+- **Не в scope Э8.4a:** счётчик на пункте «Условия акции» в меню (как на Froneri) — опционально позже
 
 ### Э8.4b — Аналитика, материалы, продукция (Agent)
-- analytics, materials (прогресс), products
+- `/pages/analytics.html` — `GET /api/analytics/*` (сводка, экспорт)
+- `/pages/materials.html` — список, прогресс «Не начат / Начат / Изучен», счётчик изученных, просмотр PDF/видео
+- `/pages/products.html` — каталог продукции ЧИСТАЯ ЛИНИЯ, карточки, фильтры по дистрибьютору
+- Референс: `reference_site фронери/_cursor_reference_*.md` (визуал)
 
 ### Э8.5 — Адаптив (Agent)
 - Проверка 320–1920 px, кнопки 44×44
@@ -232,10 +240,10 @@ CSS: Mobile-first, 320–1920 px, touch 44×44 px.
 Стиль: табличный, `/admin/*`, без копирования Froneri 1:1.
 
 ### Э9.1 — Ядро (Agent)
-- Users, Import, Points, Orders
+- Users (включая **назначение дистрибьютора** — без него не работают задания, импорт продаж, каталог), Import, Points, Orders
 
 ### Э9.2 — Призы и контент-управление (Agent)
-- Prizes, Tasks, Materials
+- Prizes, **Tasks** (`POST /create-with-cover`, HTML-контент, обложка; при необходимости админ-список всех заданий), Materials
 
 ### Э9.3 — Редакторы контента (Agent)
 - FAQ, Instructions, Support, Products
@@ -249,7 +257,7 @@ CSS: Mobile-first, 320–1920 px, touch 44×44 px.
 
 | Задача | Расписание |
 |--------|------------|
-| check_points_deadlines | ежедневно 00:01 |
+| check_points_deadlines | ежедневно 00:01 с 16 по 21 числокаждого месяца |
 | backup_postgres | ежедневно 03:00, 7 копий |
 | run_product_parser | еженедельно |
 | expire_verification_codes | каждые 1–5 мин |
@@ -269,7 +277,7 @@ CSS: Mobile-first, 320–1920 px, touch 44×44 px.
 ## Этап 12. Тестирование и приёмка (2 чата)
 
 ### Э12.1 — Автотесты (Agent+)
-- auth, points transactions, import idempotency, order status machine
+- auth, points transactions, import idempotency, order status machine, **tasks list/detail/accept**
 
 ### Э12.2 — Приёмка (Agent + владелец)
 - Ручная приёмка: раздел 20 ТЗ
@@ -296,6 +304,7 @@ CSS: Mobile-first, 320–1920 px, touch 44×44 px.
 - Импорт users + sales, идемпотентность
 - Баллы: баланс, история, активация, просрочка (Э10)
 - Каталог как Froneri, сертификаты и СБП, «Мои заявки»
+- **Условия акции:** сетка карточек, «Все периоды», «Читать», принятие участия
 - Профиль: ИНН/КНД один раз, верификация
 - Материалы: не начат / начат / изучен, счётчик
 - FAQ, инструкции, контакты из админки

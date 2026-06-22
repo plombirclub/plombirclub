@@ -54,10 +54,19 @@ class Settings(BaseSettings):
 
     upload_dir: str = "/uploads"
     user_document_max_mb: int = 20
+    material_max_mb: int = 100
+
+    backup_dir: str = "/backups"
+    backup_retain_count: int = 7
+    backup_script_path: str = "/scripts/backup.sh"
 
     @property
     def user_document_max_bytes(self) -> int:
         return self.user_document_max_mb * 1024 * 1024
+
+    @property
+    def material_max_bytes(self) -> int:
+        return self.material_max_mb * 1024 * 1024
 
 
 settings = Settings()

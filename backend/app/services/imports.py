@@ -21,13 +21,12 @@ from app.core.security import hash_password
 from app.models.distributor import Distributor
 from app.models.enums import ImportType, PointsLedgerStatus, PointsOperationType, TaskType, UserRole
 from app.models.import_error_log import ImportErrorLog
-from app.models.points_ledger import PointsLedger
-from app.models.points_operations_log import PointsOperationsLog
-from app.models.points_overwritten_log import PointsOverwrittenLog
 from app.models.task import Task
 from app.models.task_distributor import TaskDistributor
 from app.models.user import User
 from app.models.user_task_acceptance import UserTaskAcceptance
+from app.services.notifications import NotificationService
+from app.services.points import PointsService
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +243,7 @@ def _send_temporary_password_email(email: str, temporary_password: str) -> str |
 class ImportsService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.points_service = PointsService(db)
 
     async def build_users_template(self) -> bytes:
         workbook = Workbook()
@@ -477,6 +477,7 @@ class ImportsService:
 
         task_cache: dict[tuple[uuid.UUID, str], uuid.UUID | None] = {}
         acceptance_cache: dict[tuple[uuid.UUID, uuid.UUID], bool] = {}
+        activation_notify: set[tuple[uuid.UUID, str]] = set()
 
         for row_number, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
             row_values = list(row)
@@ -608,80 +609,49 @@ class ImportsService:
                 source = f"import_sales:{import_base_key}:{role}"
                 amount = _normalize_decimal(points_amount)
 
-                existing_entry = await self.db.scalar(
-                    select(PointsLedger).where(
-                        PointsLedger.user_id == user.id,
-                        PointsLedger.source == source,
-                    )
+                operation_result = await self.points_service.upsert_import_points_entry(
+                    user_id=user.id,
+                    source=source,
+                    amount=amount,
+                    status=status_value,
+                    period_month=period_month,
+                    admin_id=admin_id,
+                    import_file_name=import_file_name,
+                    import_row_number=row_number,
+                    create_comment=(
+                        f"Импорт продаж: {client_name}, {client_address}, {product_name}"
+                        f"|кор:{_normalize_decimal(quantity)}|дата:{document_date.isoformat()}"
+                    ),
+                    overwrite_comment=f"Импорт продаж: обновление начисления ({role.upper()})",
+                    commit=False,
                 )
-                if existing_entry is None:
-                    self.db.add(
-                        PointsLedger(
-                            user_id=user.id,
-                            amount=amount,
-                            status=status_value,
-                            source=source,
-                            request_id=None,
-                            period_month=period_month,
-                        )
-                    )
-                    self.db.add(
-                        PointsOperationsLog(
-                            user_id=user.id,
-                            request_id=None,
-                            amount=amount,
-                            operation_type=PointsOperationType.import_,
-                            source=source,
-                            admin_id=admin_id,
-                            comment=f"Импорт продаж: {client_name}, {client_address}, {product_name}",
-                        )
-                    )
+                if operation_result == "created":
                     row_imported += 1
-                    continue
-
-                if (
-                    _normalize_decimal(existing_entry.amount) == amount
-                    and existing_entry.status == status_value
-                    and existing_entry.period_month == period_month
-                ):
+                    if status_value == PointsLedgerStatus.pending:
+                        activation_notify.add((user.id, period_month))
+                elif operation_result == "overwritten":
+                    row_overwritten += 1
+                    if status_value == PointsLedgerStatus.pending:
+                        activation_notify.add((user.id, period_month))
+                else:
                     row_duplicates += 1
-                    continue
-
-                self.db.add(
-                    PointsOverwrittenLog(
-                        user_id=user.id,
-                        period_month=existing_entry.period_month or period_month,
-                        old_amount=_normalize_decimal(existing_entry.amount),
-                        new_amount=amount,
-                        old_status=existing_entry.status.value,
-                        new_status=status_value.value,
-                        import_file_name=import_file_name,
-                        import_row_number=row_number,
-                        changed_by=admin_id,
-                        reason="Повторный импорт строки продаж с изменением данных",
-                    )
-                )
-                existing_entry.amount = amount
-                existing_entry.status = status_value
-                existing_entry.period_month = period_month
-                self.db.add(
-                    PointsOperationsLog(
-                        user_id=user.id,
-                        request_id=None,
-                        amount=amount,
-                        operation_type=PointsOperationType.import_,
-                        source=source,
-                        admin_id=admin_id,
-                        comment=f"Импорт продаж: обновление начисления ({role.upper()})",
-                    )
-                )
-                row_overwritten += 1
 
             if row_failed:
                 continue
             imported_records_count += row_imported
             overwritten_count += row_overwritten
             skipped_duplicates_count += row_duplicates
+
+        if activation_notify:
+            notification_items = [
+                {
+                    "user_id": user_id,
+                    "event_type": "points_activation",
+                    "period_month": period,
+                }
+                for user_id, period in sorted(activation_notify, key=lambda item: (str(item[0]), item[1]))
+            ]
+            await NotificationService(self.db).send_batch(items=notification_items, commit=False)
 
         await self.db.commit()
         return {
@@ -690,6 +660,7 @@ class ImportsService:
             "overwritten_count": overwritten_count,
             "skipped_duplicates_count": skipped_duplicates_count,
             "failed_count": failed_count,
+            "activation_notifications_sent": len(activation_notify),
         }
 
     def _resolve_sales_indexes(self, header_row: list[str]) -> dict[str, int]:

@@ -3,11 +3,21 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from urllib.parse import unquote
 
+from app.api.analytics import router as analytics_router
 from app.api.auth import router as auth_router
+from app.api.content import router as content_router
 from app.api.distributors import router as distributors_router
 from app.api.health import router as health_router
+from app.api.logs import router as logs_router
 from app.api.imports import router as imports_router
+from app.api.materials import router as materials_router
+from app.api.notifications import router as notifications_router
+from app.api.orders import router as orders_router
+from app.api.parser import router as parser_router
+from app.api.products import router as products_router
 from app.api.points import router as points_router
+from app.api.reports import router as reports_router
+from app.api.rewards import router as rewards_router
 from app.api.tasks import router as tasks_router
 from app.api.users import router as users_router
 from app.core.config import settings
@@ -38,6 +48,16 @@ app.include_router(distributors_router, prefix="/api")
 app.include_router(points_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
 app.include_router(imports_router, prefix="/api")
+app.include_router(rewards_router, prefix="/api")
+app.include_router(orders_router, prefix="/api")
+app.include_router(materials_router, prefix="/api")
+app.include_router(content_router, prefix="/api")
+app.include_router(analytics_router, prefix="/api")
+app.include_router(reports_router, prefix="/api")
+app.include_router(notifications_router, prefix="/api")
+app.include_router(parser_router, prefix="/api")
+app.include_router(products_router, prefix="/api")
+app.include_router(logs_router, prefix="/api")
 
 _CSRF_EXEMPT_PATHS = {
     "/api/auth/login",

@@ -26,6 +26,7 @@ class Task(Base, CreatedAtMixin):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    cover_image_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     period_month: Mapped[str] = mapped_column(String(7), nullable=False)
     task_type: Mapped[TaskType] = mapped_column(
         Enum(TaskType, name="task_type", native_enum=False, length=30),

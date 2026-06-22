@@ -12,8 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.enums import PointsLedgerStatus, PointsOperationType, TaskType
+from app.models.notification import Notification
+from app.models.notification_template import NotificationTemplate
+from app.utils.datetime_msk import compute_activation_deadline, is_points_deadline_check_day, now_msk
 from app.models.points_ledger import PointsLedger
 from app.models.points_operations_log import PointsOperationsLog
+from app.models.points_overwritten_log import PointsOverwrittenLog
 from app.models.task import Task
 from app.models.task_distributor import TaskDistributor
 from app.models.user import User
@@ -270,6 +274,71 @@ class PointsService:
 
         return await self._run_with_deadlock_retry(_activate_once)
 
+    async def admin_activate_points(
+        self,
+        *,
+        user_id: uuid.UUID,
+        admin_id: uuid.UUID,
+        period_month: str | None = None,
+        comment: str | None = None,
+    ) -> dict[str, Any]:
+        """Ручная активация баллов администратором (inactive или pending → active)."""
+        target_period = _validate_period_month(period_month) if period_month else None
+        admin_comment = (comment or "").strip() or "Ручная активация баллов администратором"
+
+        async def _activate_once() -> dict[str, Any]:
+            await self._lock_user(user_id=user_id)
+
+            query = (
+                select(PointsLedger)
+                .where(
+                    PointsLedger.user_id == user_id,
+                    PointsLedger.status.in_(
+                        [PointsLedgerStatus.inactive, PointsLedgerStatus.pending]
+                    ),
+                )
+                .order_by(PointsLedger.created_at.asc(), PointsLedger.id.asc())
+                .with_for_update()
+            )
+            if target_period:
+                query = query.where(PointsLedger.period_month == target_period)
+
+            entries = (await self.db.scalars(query)).all()
+            if not entries:
+                return {
+                    "activated_count": 0,
+                    "activated_amount": 0.0,
+                    "period_month": target_period,
+                }
+
+            total_amount = Decimal("0.00")
+            now = datetime.now(UTC)
+            for entry in entries:
+                entry.status = PointsLedgerStatus.active
+                total_amount += entry.amount
+                self.db.add(
+                    PointsOperationsLog(
+                        user_id=user_id,
+                        request_id=entry.request_id,
+                        amount=entry.amount,
+                        operation_type=PointsOperationType.activation,
+                        source="admin_manual_activation",
+                        admin_id=admin_id,
+                        comment=f"{admin_comment} (период {entry.period_month or 'unknown'})",
+                    )
+                )
+
+            await self.db.commit()
+
+            return {
+                "activated_count": len(entries),
+                "activated_amount": float(_normalize_decimal(total_amount)),
+                "period_month": target_period,
+                "activated_at": now.isoformat(),
+            }
+
+        return await self._run_with_deadlock_retry(_activate_once)
+
     async def reserve_points_with_split(
         self,
         *,
@@ -278,6 +347,7 @@ class PointsService:
         request_id: uuid.UUID,
         source: str,
         comment: str | None = None,
+        commit: bool = True,
     ) -> list[PointsLedger]:
         """
         Вспомогательный метод для следующих этапов:
@@ -355,11 +425,340 @@ class PointsService:
                         comment=comment,
                     )
                 )
-            await self.db.commit()
+            if commit:
+                await self.db.commit()
 
             return reserved_entries
 
         return await self._run_with_deadlock_retry(_reserve_once)
+
+    async def refund_reserved_points_for_request(
+        self,
+        *,
+        user_id: uuid.UUID,
+        request_id: uuid.UUID,
+        admin_id: uuid.UUID | None,
+        source: str = "order_rejected",
+        comment: str | None = "Возврат баллов при отклонении заявки",
+        commit: bool = True,
+    ) -> list[PointsLedger]:
+        async def _refund_once() -> list[PointsLedger]:
+            await self._lock_user(user_id=user_id)
+
+            entries = (
+                await self.db.scalars(
+                    select(PointsLedger)
+                    .where(
+                        PointsLedger.user_id == user_id,
+                        PointsLedger.request_id == request_id,
+                        PointsLedger.status == PointsLedgerStatus.pending_redemption,
+                    )
+                    .order_by(PointsLedger.created_at.asc(), PointsLedger.id.asc())
+                    .with_for_update()
+                )
+            ).all()
+
+            for entry in entries:
+                entry.status = PointsLedgerStatus.active
+                entry.request_id = None
+                self.db.add(
+                    PointsOperationsLog(
+                        user_id=user_id,
+                        request_id=request_id,
+                        amount=entry.amount,
+                        operation_type=PointsOperationType.refund,
+                        source=source,
+                        admin_id=admin_id,
+                        comment=comment,
+                    )
+                )
+            if commit:
+                await self.db.commit()
+            return entries
+
+        return await self._run_with_deadlock_retry(_refund_once)
+
+    async def redeem_reserved_points_for_request(
+        self,
+        *,
+        user_id: uuid.UUID,
+        request_id: uuid.UUID,
+        admin_id: uuid.UUID | None,
+        source: str = "order_fulfilled",
+        comment: str | None = "Списание баллов по выполненной заявке",
+        commit: bool = True,
+    ) -> list[PointsLedger]:
+        async def _redeem_once() -> list[PointsLedger]:
+            await self._lock_user(user_id=user_id)
+
+            entries = (
+                await self.db.scalars(
+                    select(PointsLedger)
+                    .where(
+                        PointsLedger.user_id == user_id,
+                        PointsLedger.request_id == request_id,
+                        PointsLedger.status == PointsLedgerStatus.pending_redemption,
+                    )
+                    .order_by(PointsLedger.created_at.asc(), PointsLedger.id.asc())
+                    .with_for_update()
+                )
+            ).all()
+            if not entries:
+                raise ValueError("Нет зарезервированных баллов для выдачи заявки")
+
+            for entry in entries:
+                entry.status = PointsLedgerStatus.redeemed
+                self.db.add(
+                    PointsOperationsLog(
+                        user_id=user_id,
+                        request_id=request_id,
+                        amount=entry.amount,
+                        operation_type=PointsOperationType.redeem,
+                        source=source,
+                        admin_id=admin_id,
+                        comment=comment,
+                    )
+                )
+            if commit:
+                await self.db.commit()
+            return entries
+
+        return await self._run_with_deadlock_retry(_redeem_once)
+
+    async def upsert_import_points_entry(
+        self,
+        *,
+        user_id: uuid.UUID,
+        source: str,
+        amount: Decimal,
+        status: PointsLedgerStatus,
+        period_month: str,
+        admin_id: uuid.UUID | None,
+        import_file_name: str | None,
+        import_row_number: int | None,
+        create_comment: str,
+        overwrite_comment: str,
+        commit: bool = True,
+    ) -> str:
+        normalized_amount = _normalize_decimal(amount)
+
+        async def _upsert_once() -> str:
+            existing_entry = await self.db.scalar(
+                select(PointsLedger)
+                .where(
+                    PointsLedger.user_id == user_id,
+                    PointsLedger.source == source,
+                )
+                .with_for_update()
+            )
+            if existing_entry is None:
+                self.db.add(
+                    PointsLedger(
+                        user_id=user_id,
+                        amount=normalized_amount,
+                        status=status,
+                        source=source,
+                        request_id=None,
+                        period_month=period_month,
+                    )
+                )
+                self.db.add(
+                    PointsOperationsLog(
+                        user_id=user_id,
+                        request_id=None,
+                        amount=normalized_amount,
+                        operation_type=PointsOperationType.import_,
+                        source=source,
+                        admin_id=admin_id,
+                        comment=create_comment,
+                    )
+                )
+                if commit:
+                    await self.db.commit()
+                return "created"
+
+            if (
+                _normalize_decimal(existing_entry.amount) == normalized_amount
+                and existing_entry.status == status
+                and existing_entry.period_month == period_month
+            ):
+                return "duplicate"
+
+            self.db.add(
+                PointsOverwrittenLog(
+                    user_id=user_id,
+                    period_month=existing_entry.period_month or period_month,
+                    old_amount=_normalize_decimal(existing_entry.amount),
+                    new_amount=normalized_amount,
+                    old_status=existing_entry.status.value,
+                    new_status=status.value,
+                    import_file_name=import_file_name,
+                    import_row_number=import_row_number,
+                    changed_by=admin_id,
+                    reason="Повторный импорт строки продаж с изменением данных",
+                )
+            )
+            existing_entry.amount = normalized_amount
+            existing_entry.status = status
+            existing_entry.period_month = period_month
+            self.db.add(
+                PointsOperationsLog(
+                    user_id=user_id,
+                    request_id=None,
+                    amount=normalized_amount,
+                    operation_type=PointsOperationType.import_,
+                    source=source,
+                    admin_id=admin_id,
+                    comment=overwrite_comment,
+                )
+            )
+            if commit:
+                await self.db.commit()
+            return "overwritten"
+
+        return await self._run_with_deadlock_retry(_upsert_once)
+
+    async def expire_overdue_pending_points(self) -> dict[str, Any]:
+        """Переводит просроченные pending-баллы в inactive (запуск с 16 по 21 число, 00:01 МСК)."""
+        if not is_points_deadline_check_day():
+            return {
+                "skipped": True,
+                "reason": "outside_check_window",
+                "expired_users": 0,
+                "expired_records": 0,
+                "expired_amount": 0.0,
+            }
+
+        now = now_msk()
+        groups = (
+            await self.db.execute(
+                select(PointsLedger.user_id, PointsLedger.period_month)
+                .where(
+                    PointsLedger.status == PointsLedgerStatus.pending,
+                    PointsLedger.period_month.is_not(None),
+                )
+                .group_by(PointsLedger.user_id, PointsLedger.period_month)
+            )
+        ).all()
+
+        expired_users = 0
+        expired_records = 0
+        expired_amount = Decimal("0.00")
+
+        for user_id, period_month in groups:
+            if not period_month:
+                continue
+            notification_at = await self._resolve_activation_notification_at(
+                user_id=user_id,
+                period_month=period_month,
+            )
+            deadline = compute_activation_deadline(period_month, notification_at)
+            if now <= deadline:
+                continue
+
+            result = await self._expire_pending_for_user_period(
+                user_id=user_id,
+                period_month=period_month,
+                deadline=deadline,
+            )
+            if result["expired_records"] > 0:
+                expired_users += 1
+                expired_records += result["expired_records"]
+                expired_amount += Decimal(str(result["expired_amount"]))
+
+        await self.db.commit()
+        return {
+            "skipped": False,
+            "expired_users": expired_users,
+            "expired_records": expired_records,
+            "expired_amount": float(_normalize_decimal(expired_amount)),
+            "checked_at": now.isoformat(),
+        }
+
+    async def _resolve_activation_notification_at(
+        self,
+        *,
+        user_id: uuid.UUID,
+        period_month: str,
+    ) -> datetime:
+        notified_at = await self.db.scalar(
+            select(func.min(Notification.created_at))
+            .join(NotificationTemplate, Notification.template_id == NotificationTemplate.id)
+            .where(
+                Notification.user_id == user_id,
+                NotificationTemplate.event_type == "points_activation",
+                Notification.message.contains(period_month),
+            )
+        )
+        if notified_at is not None:
+            return notified_at
+
+        fallback = await self.db.scalar(
+            select(func.min(PointsLedger.created_at)).where(
+                PointsLedger.user_id == user_id,
+                PointsLedger.period_month == period_month,
+                PointsLedger.status == PointsLedgerStatus.pending,
+            )
+        )
+        return fallback or datetime.now(UTC)
+
+    async def _expire_pending_for_user_period(
+        self,
+        *,
+        user_id: uuid.UUID,
+        period_month: str,
+        deadline: datetime,
+    ) -> dict[str, Any]:
+        async def _expire_once() -> dict[str, Any]:
+            await self._lock_user(user_id=user_id)
+            entries = (
+                await self.db.scalars(
+                    select(PointsLedger)
+                    .where(
+                        PointsLedger.user_id == user_id,
+                        PointsLedger.period_month == period_month,
+                        PointsLedger.status == PointsLedgerStatus.pending,
+                    )
+                    .with_for_update()
+                )
+            ).all()
+            if not entries:
+                return {"expired_records": 0, "expired_amount": 0.0}
+
+            total_amount = Decimal("0.00")
+            for entry in entries:
+                entry.status = PointsLedgerStatus.inactive
+                total_amount += entry.amount
+                self.db.add(
+                    PointsOperationsLog(
+                        user_id=user_id,
+                        request_id=entry.request_id,
+                        amount=entry.amount,
+                        operation_type=PointsOperationType.manual_adjustment,
+                        source="scheduler_points_deadline",
+                        admin_id=None,
+                        comment=(
+                            f"Автоматическая просрочка активации за период {period_month} "
+                            f"(дедлайн {deadline.astimezone(UTC).isoformat()})"
+                        ),
+                    )
+                )
+
+            self.db.add(
+                UserActionsLog(
+                    user_id=user_id,
+                    action="points_activation_expired",
+                    entity_type="points",
+                    entity_id=None,
+                    ip_address=None,
+                )
+            )
+            return {
+                "expired_records": len(entries),
+                "expired_amount": float(_normalize_decimal(total_amount)),
+            }
+
+        return await self._run_with_deadlock_retry(_expire_once)
 
     async def list_pending_activation(
         self,

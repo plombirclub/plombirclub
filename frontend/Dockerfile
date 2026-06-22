@@ -1,8 +1,19 @@
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package.json ./
+RUN npm install
+COPY css ./css
+COPY js ./js
+COPY pages ./pages
+COPY admin ./admin
+COPY images ./images
+COPY index.html ./
+COPY docker-nginx.conf ./
+COPY postcss.config.cjs babel.config.cjs ./
+COPY scripts ./scripts
+RUN npm run build
+
 FROM nginx:1.27-alpine
-
-COPY index.html /usr/share/nginx/html/
-COPY css /usr/share/nginx/html/css/
-COPY js /usr/share/nginx/html/js/
+COPY --from=build /app/dist/ /usr/share/nginx/html/
 COPY docker-nginx.conf /etc/nginx/conf.d/default.conf
-
 EXPOSE 80

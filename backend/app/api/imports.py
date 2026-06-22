@@ -9,7 +9,8 @@ from app.core.auth import AuthContext, require_admin
 from app.core.database import get_db_session
 from app.services.imports import ImportsService
 from app.services.users import write_admin_log
-from app.tasks.imports import import_sales_task
+from app.tasks.celery_app import celery_app
+from app.tasks.imports import import_sales_task, import_users_task
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -30,6 +31,7 @@ async def template_users(
 @router.post("/users")
 async def import_users(
     file: UploadFile = File(...),
+    use_celery: bool = Query(default=False),
     auth: AuthContext = Depends(require_admin),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
@@ -45,6 +47,30 @@ async def import_users(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Файл пустой",
         )
+
+    if use_celery:
+        task = import_users_task.delay(
+            file_bytes_base64=base64.b64encode(file_bytes).decode("ascii"),
+            import_file_name=file.filename,
+            admin_id=str(auth.user.id),
+        )
+        await write_admin_log(
+            db,
+            admin=auth.user,
+            action="import_users_xlsx_queued",
+            entity_type="import",
+            old_value=None,
+            new_value={"task_id": task.id, "file_name": file.filename},
+        )
+        await db.commit()
+        return {
+            "success": True,
+            "data": {
+                "queued": True,
+                "task_id": task.id,
+                "message": "Импорт пользователей поставлен в очередь Celery",
+            },
+        }
 
     service = ImportsService(db)
     try:
@@ -143,3 +169,59 @@ async def import_sales(
     await db.commit()
 
     return {"success": True, "data": result}
+
+
+@router.get("/users/tasks/{task_id}")
+async def get_import_users_task_status(
+    task_id: str,
+    _: AuthContext = Depends(require_admin),
+) -> dict:
+    task_result = celery_app.AsyncResult(task_id)
+    state = task_result.state
+
+    data: dict = {
+        "task_id": task_id,
+        "state": state,
+        "ready": task_result.ready(),
+        "successful": task_result.successful(),
+        "failed": task_result.failed(),
+    }
+
+    if state == "SUCCESS":
+        result_payload = task_result.result if isinstance(task_result.result, dict) else None
+        data["result"] = result_payload
+    elif state == "FAILURE":
+        error_message = str(task_result.result) if task_result.result is not None else "Задача завершилась с ошибкой"
+        data["error"] = error_message
+    elif task_result.info:
+        data["info"] = str(task_result.info)
+
+    return {"success": True, "data": data}
+
+
+@router.get("/sales/tasks/{task_id}")
+async def get_import_sales_task_status(
+    task_id: str,
+    _: AuthContext = Depends(require_admin),
+) -> dict:
+    task_result = celery_app.AsyncResult(task_id)
+    state = task_result.state
+
+    data: dict = {
+        "task_id": task_id,
+        "state": state,
+        "ready": task_result.ready(),
+        "successful": task_result.successful(),
+        "failed": task_result.failed(),
+    }
+
+    if state == "SUCCESS":
+        result_payload = task_result.result if isinstance(task_result.result, dict) else None
+        data["result"] = result_payload
+    elif state == "FAILURE":
+        error_message = str(task_result.result) if task_result.result is not None else "Задача завершилась с ошибкой"
+        data["error"] = error_message
+    elif task_result.info:
+        data["info"] = str(task_result.info)
+
+    return {"success": True, "data": data}

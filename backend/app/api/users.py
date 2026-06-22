@@ -12,7 +12,10 @@ from app.core.auth import AuthContext, require_admin, require_auth
 from app.core.database import get_db_session
 from app.core.files import save_user_document
 from app.models.deleted_users_archive import DeletedUsersArchive
+from app.models.distributor import Distributor
 from app.models.user import User
+from app.services.points import PointsService
+from app.services.notifications import NotificationService
 from app.services.users import (
     serialize_user_admin_list_item,
     serialize_user_profile,
@@ -36,6 +39,15 @@ class ProfileUpdateRequest(BaseModel):
 
 class DeactivateUserRequest(BaseModel):
     is_active: bool
+
+
+class AssignDistributorRequest(BaseModel):
+    distributor_id: uuid.UUID | None = None
+
+
+class AdminActivatePointsRequest(BaseModel):
+    period_month: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
+    comment: str | None = Field(default=None, max_length=500)
 
 
 DocumentType = Literal["inn_photo", "knd_1122035_photo"]
@@ -201,6 +213,11 @@ async def verify_inn(
             "inn_verified_at": user.inn_verified_at.isoformat(),
         },
     )
+    await NotificationService(db).send(
+        user_id=user.id,
+        event_type="inn_verified",
+        commit=False,
+    )
     await db.commit()
     await db.refresh(user)
 
@@ -242,10 +259,95 @@ async def verify_self_employed(
             "self_employed_verified_at": user.self_employed_verified_at.isoformat(),
         },
     )
+    await NotificationService(db).send(
+        user_id=user.id,
+        event_type="self_employed_verified",
+        commit=False,
+    )
     await db.commit()
     await db.refresh(user)
 
     return {"success": True, "data": serialize_user_profile(user)}
+
+
+@router.put("/{user_id}/distributor")
+async def assign_distributor(
+    user_id: uuid.UUID,
+    payload: AssignDistributorRequest,
+    auth: AuthContext = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    user = await _get_user_or_404(db, user_id)
+
+    old_value = {
+        "distributor_id": str(user.distributor_id) if user.distributor_id else None,
+        "distributor_name": user.distributor.name if user.distributor else None,
+    }
+
+    if payload.distributor_id is None:
+        user.distributor_id = None
+    else:
+        distributor = await db.scalar(
+            select(Distributor).where(Distributor.id == payload.distributor_id)
+        )
+        if distributor is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Дистрибьютор не найден",
+            )
+        user.distributor_id = distributor.id
+
+    await write_admin_log(
+        db,
+        admin=auth.user,
+        action="assign_distributor",
+        entity_type="user",
+        entity_id=user.id,
+        old_value=old_value,
+        new_value={
+            "distributor_id": str(user.distributor_id) if user.distributor_id else None,
+            "distributor_name": user.distributor.name if user.distributor else None,
+        },
+    )
+    await db.commit()
+    user = await _get_user_or_404(db, user_id)
+
+    return {"success": True, "data": serialize_user_profile(user)}
+
+
+@router.put("/{user_id}/activate-points")
+async def admin_activate_points(
+    user_id: uuid.UUID,
+    payload: AdminActivatePointsRequest | None = None,
+    auth: AuthContext = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    await _get_user_or_404(db, user_id)
+    service = PointsService(db)
+    try:
+        result = await service.admin_activate_points(
+            user_id=user_id,
+            admin_id=auth.user.id,
+            period_month=payload.period_month if payload else None,
+            comment=payload.comment if payload else None,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    await write_admin_log(
+        db,
+        admin=auth.user,
+        action="admin_activate_points",
+        entity_type="user",
+        entity_id=user_id,
+        old_value=None,
+        new_value=result,
+    )
+    await db.commit()
+
+    return {"success": True, "data": result}
 
 
 @router.put("/{user_id}/deactivate")

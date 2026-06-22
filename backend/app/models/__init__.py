@@ -27,6 +27,7 @@ from app.models.points_ledger import PointsLedger
 from app.models.points_operations_log import PointsOperationsLog
 from app.models.points_overwritten_log import PointsOverwrittenLog
 from app.models.prize import Prize, SYSTEM_SBP_PRIZE_ID
+from app.models.prize_distributor import PrizeDistributor
 from app.models.product import Product
 from app.models.product_distributor import ProductDistributor
 from app.models.request import Request
@@ -58,6 +59,7 @@ __all__ = [
     "PointsOperationsLog",
     "PointsOverwrittenLog",
     "Prize",
+    "PrizeDistributor",
     "PrizeType",
     "Product",
     "ProductDistributor",

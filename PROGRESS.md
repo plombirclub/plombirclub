@@ -1,8 +1,8 @@
 # PROGRESS — промо-портал «Чистая Линия»
 
-**Обновлено:** 2026-06-21  
-**Текущий этап:** 6 (в работе)  
-**Следующий шаг:** Э6.1 — `/api/rewards` (каталог призов)  
+**Обновлено:** 2026-06-21 (Э10 — Фоновые задачи: scheduler, Celery, бэкапы, просрочка баллов)  
+**Текущий этап:** 10 ✅  
+**Следующий шаг:** Э11 — Деплой (VPS Timeweb, DNS, HTTPS)
 **Правило:** 1 подэтап = 1 новый чат Agent (см. PLAN)
 
 **Документы:** `ТЗ оптимизированное для ИИ-разработчика.md` · `PLAN-техническая-реализация.md`
@@ -48,7 +48,7 @@
 | 1.3 | Миграция C: Requests, Verification_Codes | ✅ | Agent |
 | 1.4 | Миграция D: Tasks, Materials, Products, Parser_Config | ✅ | Agent |
 | 1.5 | Миграция E: Notifications, все Logs, Archive | ✅ | Agent |
-| 1.6 | FK, индексы, seed (admin, дистрибьюторы, шаблоны) | ✅ | Agent+ |
+| 1.6 | FK, индексы, seed (admin, дистрибьюторы, шаблоны) | ✅ | Agent+; доп. миграция `0010` — обложка заданий, демо-задачи |
 
 **Итог этапа 1:** ✅  
 **Дата завершения этапа 1:** 2026-06-20
@@ -88,7 +88,7 @@
 | # | Задача | Статус | Режим |
 |---|--------|--------|-------|
 | 4.1 | PointsService + `/api/points` (balance, consent, activate) | ✅ | Agent+ |
-| 4.2 | `/api/tasks` (create, current, accept) | ✅ | Agent |
+| 4.2 | `/api/tasks` (list, current, get, create, create-with-cover, accept) | ✅ | Agent; расширено в миграции `0010` |
 
 **Итог этапа 4:** ✅  
 **Дата завершения этапа 4:** 2026-06-20
@@ -111,12 +111,13 @@
 
 | # | Задача | Статус | Режим |
 |---|--------|--------|-------|
-| 6.1 | `/api/rewards` | ⬜ | Agent+ |
-| 6.2 | Заявка на сертификат | ⬜ | Agent+ |
-| 6.3 | Заявка СБП + verification_pending | ⬜ | Agent+ |
-| 6.4 | Админ: status, fulfill, возврат баллов | ⬜ | Agent+ |
+| 6.1 | `/api/rewards` | ✅ | Agent+ |
+| 6.2 | Заявка на сертификат | ✅ | Agent+ |
+| 6.3 | Заявка СБП + verification_pending | ✅ | Agent+ |
+| 6.4 | Админ: status, fulfill, возврат баллов | ✅ | Agent+ |
 
-**Итог этапа 6:** ⬜
+**Итог этапа 6:** ✅  
+**Дата завершения этапа 6:** 2026-06-21
 
 ---
 
@@ -124,11 +125,12 @@
 
 | # | Задача | Статус | Режим |
 |---|--------|--------|-------|
-| 7.1 | Materials + progress, Content (FAQ, instructions, support) | ⬜ | Agent |
-| 7.2 | Analytics + reports (CRM), Notifications + templates | ⬜ | Agent |
-| 7.3 | Parser omoloko.ru | ⬜ | Agent+ |
+| 7.1 | Materials + progress, Content (FAQ, instructions, support) | ✅ | Agent |
+| 7.2 | Analytics + reports (CRM), Notifications + templates | ✅ | Agent |
+| 7.3 | Parser omoloko.ru | ✅ | Agent+ |
 
-**Итог этапа 7:** ⬜
+**Итог этапа 7:** ✅  
+**Дата завершения этапа 7:** 2026-06-21
 
 ---
 
@@ -136,14 +138,15 @@
 
 | # | Задача | Статус | Режим |
 |---|--------|--------|-------|
-| 8.1 | Layout + login, forgot-password, first-login | ⬜ | Agent |
-| 8.2 | Profile + Мои заявки | ⬜ | Agent |
-| 8.3 | Каталог призов + модалки заявок | ⬜ | Agent+ |
-| 8.4a | Задания, FAQ, instructions, notifications | ⬜ | Agent |
-| 8.4b | Analytics, materials, products | ⬜ | Agent |
-| 8.5 | Адаптив 320–1920 px | ⬜ | Agent |
+| 8.1 | Layout + login, forgot-password, first-login | ✅ | Agent |
+| 8.2 | Profile + Мои заявки | ✅ | Agent |
+| 8.3 | Каталог призов + модалки заявок | ✅ | Agent+ |
+| 8.4a | Задания, FAQ, instructions, notifications | ✅ | Agent; условия акции: сетка Froneri, «Все периоды» |
+| 8.4b | Analytics, materials, products | ✅ | Agent; визуал как Froneri, API `/api/products` |
+| 8.5 | Адаптив 320–1920 px | ✅ | Agent; сборка Autoprefixer + Babel, FAB поддержки, mobile-first |
 
-**Итог этапа 8:** ⬜
+**Итог этапа 8:** ✅  
+**Дата завершения этапа 8:** 2026-06-21
 
 ---
 
@@ -151,12 +154,13 @@
 
 | # | Задача | Статус | Режим |
 |---|--------|--------|-------|
-| 9.1 | Users, Import, Points, Orders | ⬜ | Agent |
-| 9.2 | Prizes, Tasks, Materials | ⬜ | Agent |
-| 9.3 | Content, Support, Products | ⬜ | Agent |
-| 9.4 | Reports (CRM), Logs, Notifications | ⬜ | Agent |
+| 9.1 | Users, Import, Points, Orders | ✅ | Agent |
+| 9.2 | Prizes, Tasks, Materials | ✅ | Agent |
+| 9.3 | Content, Support, Products | ✅ | Agent |
+| 9.4 | Reports (CRM), Logs, Notifications | ✅ | Agent |
 
-**Итог этапа 9:** ⬜
+**Итог этапа 9:** ✅  
+**Дата завершения этапа 9:** 2026-06-21
 
 ---
 
@@ -164,12 +168,13 @@
 
 | # | Задача | Статус | Режим |
 |---|--------|--------|-------|
-| 10.1 | Scheduler: дедлайны баллов (00:01), бэкапы (03:00) | ⬜ | Agent |
-| 10.2 | Парсер по расписанию | ⬜ | Agent |
-| 10.3 | Истечение кодов верификации | ⬜ | Agent |
-| 10.4 | Celery: import_excel_async, send_notification_batch | ⬜ | Agent |
+| 10.1 | Scheduler: дедлайны баллов (00:01), бэкапы (03:00) | ✅ | Agent |
+| 10.2 | Парсер по расписанию | ✅ | Agent |
+| 10.3 | Истечение кодов верификации | ✅ | Agent |
+| 10.4 | Celery: import_excel_async, send_notification_batch | ✅ | Agent |
 
-**Итог этапа 10:** ⬜
+**Итог этапа 10:** ✅  
+**Дата завершения этапа 10:** 2026-06-21
 
 ---
 
@@ -200,12 +205,150 @@
 
 ## Журнал (передача между чатами)
 
+### Запись: 2026-06-21 (Э10 — Фоновые задачи)
+- **Чат:** Э10 — Scheduler, Celery, бэкапы, просрочка баллов
+- **Сделано:** Celery Beat — `check_points_deadlines` (00:01, дни 16–21), `backup_postgres` (03:00, 7 копий), `run_product_parser` (еженедельно пн 04:00), `expire_verification_codes` (каждые 3 мин); Celery tasks — `import_users_task`, `import_sales_task`, `send_notification_batch_task`; `PointsService.expire_overdue_pending_points` с индивидуальными дедлайнами (+5 раб. дней); уведомления `points_activation` при импорте продаж; миграция `0012` — шаблон уведомления; `scripts/backup.sh` для деплоя; папка `/backups/`; admin-import: Celery для users и sales
+- **Проверка:** `docker compose build backend worker scheduler frontend`; `compileall app`; миграция `0012`; worker — 6 задач зарегистрированы; ручной `backup_postgres_task` — файл в `backups/`; `/api/health` — 200
+- **Блокеры:** нет
+- **Следующий шаг:** Э11 — Деплой VPS Timeweb
+
+### Запись: 2026-06-21 (Э9.2–9.4 — Админка: призы, контент, отчёты)
+- **Чат:** Э9.2–9.4 — Frontend админ-панель (остальные экраны)
+- **Сделано:** страницы `/admin/prizes.html`, `/admin/tasks.html`, `/admin/materials.html`, `/admin/content.html` (FAQ, инструкции, контакты поддержки), `/admin/products.html`, `/admin/reports.html`, `/admin/logs.html`, `/admin/notifications.html`; расширено меню админки; backend: список заданий для admin, CRUD продукции, `GET /logs/admin|system|user-actions`, `GET /rewards/{id}/visibility`
+- **Проверка:** `npm run build`; `docker compose build backend frontend`; `compileall app`; новые admin-страницы в `frontend/dist/admin/`
+- **Блокеры:** нет
+- **Следующий шаг:** Э10 — Scheduler, Celery, expire codes
+
+### Запись: 2026-06-21 (Э9.1 — Админка Users, Import, Points, Orders)
+- **Чат:** Э9.1 — Frontend админ-панель (ядро)
+- **Сделано:** страницы `/admin/users.html`, `/admin/import.html`, `/admin/points.html`, `/admin/orders.html`; общий layout админки (`admin-layout.js`, `admin.css`); guard `requireAdmin`; редирект admin после login; Users: поиск, фильтры, карточка (ИНН, самозанятость, дистрибьютор, документы, блокировка, ФЗ-152); Import: шаблоны и загрузка users/sales (+ Celery); Points: список pending-activation; Orders: фильтр статусов, смена статуса, fulfill сертификат/СБП; backend: `PUT /users/{id}/distributor`, `PUT /users/{id}/activate-points`, email участника в `/orders/all`
+- **Проверка:** `npm run build`; `docker compose build backend frontend`; `compileall app`; `http://localhost:8080/admin/users.html` — 200; `/api/health` — 200
+- **Блокеры:** нет
+- **Следующий шаг:** Э9.2 — Prizes, Tasks, Materials
+
+### Запись: 2026-06-21 (Э8.5 — Адаптив 320–1920 px)
+- **Чат:** Э8.5 — Адаптив и кроссбраузерная сборка фронтенда
+- **Сделано:** сборка фронтенда (PostCSS Autoprefixer + Babel/core-js) в Docker; файл `responsive.css` — mobile-first 320–1920 px, кнопки и touch-цели 44×44; мобильная шапка с логотипом «ЧИСТАЯ ЛИНИЯ»; блок пользователя и выход в боковом меню; зелёная FAB-кнопка поддержки с бейджем уведомлений; исправлены мелкие кнопки «Читать»/«Подробнее»; убраны упоминания Froneri из комментариев CSS
+- **Проверка:** `npm run build` в frontend; `docker compose build frontend`; `http://localhost:8080/pages/login.html` — 200; CSS с `-webkit-` префиксами
+- **Блокеры:** нет
+- **Следующий шаг:** Э9.1 — Админка: Users, Import, Points, Orders
+
+### Запись: 2026-06-21 (доработка Э8.4b — аналитика и демо-материалы)
+- **Чат:** правки по замечаниям владельца
+- **Сделано:** убраны лишние карточки сводки на аналитике; график и подсказки показывают **кол-во коробок** (не баллы); таблица и экспорт Excel — колонки «Кол-во кор» и «Баллы» отдельно; в комментарий импорта продаж добавлены коробки и дата документа; миграция `0011` — 2 тестовых опубликованных материала
+- **Проверка:** `docker compose build`; миграция `0011`; страницы analytics/materials — 200
+- **Блокеры:** старые начисления до правки импорта не содержат «Кол-во кор» в комментарии — для них в графике будет 0, нужен повторный импорт продаж
+- **Следующий шаг:** Э8.5 — Адаптив 320–1920 px
+
+### Запись: 2026-06-21 (Э8.4b — Analytics, materials, products)
+- **Чат:** Э8.4b — Frontend аналитика, материалы, продукция
+- **Сделано:** страницы `/pages/analytics.html` (график продаж, фильтры дат/периода, экспорт Excel), `/pages/materials.html` (кольца прогресса, сетка карточек, просмотр PDF/видео/изображений, статусы изучения), `/pages/products.html` (каталог по группам, карточка SKU); стили `analytics.css`, `materials.css`, `products.css`; JS-модули; добавлен backend `GET /api/products`, `/groups`, `/{id}` для каталога продукции; метод скачивания файлов в `api.js`
+- **Проверка:** `docker compose build frontend backend`; `compileall` products API; `http://localhost:8080/pages/analytics.html`, `materials.html`, `products.html` — 200; `/api/health` — 200
+- **Блокеры:** нет
+- **Следующий шаг:** Э8.5 — Адаптив 320–1920 px
+
+### Запись: 2026-06-21 (синхронизация PROGRESS + PLAN после доработки Э8.4a)
+- **Чат:** документы — без изменений кода
+- **Сделано:** обновлены PROGRESS и PLAN: актуальный API заданий (Э4.2), миграция `0010`, итог Э8.4a (сетка + фильтр); пометки для будущих Э9.1 (дистрибьютор) и Э9.2 (админка заданий)
+- **Проверка:** только чтение файлов
+- **Блокеры:** нет
+- **Следующий шаг:** Э8.4b — Analytics, materials, products
+
+### Запись: 2026-06-21 (доработка Э8.4a — Условия акции как Froneri)
+- **Чат:** доработка Условия акции + дистрибьютор тестового пользователя
+- **Сделано:** сетка карточек условий акции как на референсе (обложка, заголовок, период, «Читать», дата); детальная страница с «Назад» и «Согласен, хочу участвовать»; фильтр «Период» с пунктом «Все периоды» по умолчанию; backend: `cover_image_path`, `GET /api/tasks`, `GET /api/tasks/{id}`, `POST /api/tasks/create-with-cover`; nginx раздаёт `/uploads/`; миграция `0010`: обложка, демо-задачи, дистрибьютор для `testuser@plombirclub.ru`; обновлены ТЗ (разделы 11, 14.10, 15.7) и PLAN Э8.4a
+- **Проверка:** `docker compose build backend frontend`; миграция `0010`; `http://localhost:8080/pages/news.html` под `testuser@plombirclub.ru`
+- **Блокеры:** нет
+- **Следующий шаг:** Э8.4b — Analytics, materials, products
+
+### Запись: 2026-06-21 (Э8.4a — Задания, FAQ, инструкции, уведомления) — **заменено доработкой выше**
+- **Чат:** Э8.4a — Frontend задания, FAQ, instructions, notifications
+- **Сделано:** первый вариант `/pages/news.html` через `GET /api/tasks/current` (без сетки карточек); FAQ, инструкции, уведомления — без изменений в доработке
+- **Примечание:** актуальный UI условий акции — в записи «доработка Э8.4a — Условия акции как Froneri»
+
+### Запись: 2026-06-21 (Э8.3 — Каталог призов + модалки заявок)
+- **Чат:** Э8.3 — Frontend каталог призов и заявки
+- **Сделано:** добавлена страница `/pages/catalog.html` с карточками призов из `GET /api/rewards` и блоком текущего баланса из `GET /api/points/balance`; реализованы модалки заявок на сертификат и СБП по ТЗ (номинал 1000–10000, шаг 1000, проверки ИНН/КНД/самозанятости/баланса, окно подтверждения «Да/Нет»); реализован сценарий `verification_pending` для СБП (выбор способа подтверждения SMS/email, отправка кода и проверка через `POST /api/orders/confirm-code`); добавлены стили `catalog.css` и логика `catalog.js`; обновлён текст на главной странице ЛК о доступности каталога
+- **Проверка:** `docker compose build frontend`; `docker compose up -d`; `http://localhost:8080/pages/catalog.html` — 200; создание заявок с ветками `placed` и `verification_pending` проверяется через UI каталога
+- **Блокеры:** нет
+- **Следующий шаг:** Э8.4a — Задания, FAQ, instructions, notifications
+
+### Запись: 2026-06-21 (Э8.2 — Profile + Мои заявки)
+- **Чат:** Э8.2 — Frontend профиль и мои заявки
+- **Сделано:** страница `/pages/profile.html` с вкладками «Основные данные» и «Мои заявки»; форма профиля (ФИО, email/телефон read-only, ИНН и КНД с однократным сохранением, загрузка документов, статус самозанятого под аватаром, смена пароля); список заявок из `GET /api/orders/my` со статусами, номиналом, комментариями и данными выдачи (промокод/ссылка/файл для сертификатов, телефон и номер операции для СБП); стили `profile.css`, логика `profile.js`; обновлена заметка на главной странице ЛК
+- **Проверка:** `docker compose build frontend`; `docker compose up -d`; `http://localhost:8080/pages/profile.html` — 200; `http://localhost:8080/api/health` — 200
+- **Блокеры:** нет
+- **Следующий шаг:** Э8.3 — Каталог призов + модалки заявок
+
+### Запись: 2026-06-21 (Э8.1 — Layout + login, forgot-password, first-login)
+- **Чат:** Э8.1 — Frontend каркас ЛК и вход
+- **Сделано:** создан общий layout ЛК (шапка, боковое меню без «Рейтинг участников», блок поддержки из API); страницы `/pages/login.html`, `/pages/forgot-password.html`, `/pages/first-login.html`, `/pages/home.html`; JS-модули `api.js`, `auth.js`, `layout.js` с cookies и CSRF; пошаговый мастер первого входа (телефон SMS/email, смена пароля, согласия); редиректы по статусу регистрации; обновлён `frontend/Dockerfile` (копирование `pages/`); мелкая правка backend: сохранение телефона при отправке SMS-кода (для ветки email-подтверждения)
+- **Проверка:** `docker compose build frontend backend`; `docker compose up -d`; `http://localhost:8080/api/health` — 200; `http://localhost:8080/pages/login.html` — 200; `compileall app/api/auth.py` в контейнере backend
+- **Блокеры:** нет
+- **Следующий шаг:** Э8.2 — Profile + Мои заявки
+
+### Запись: 2026-06-21 (Э7.3 — Parser omoloko.ru)
+- **Чат:** Э7.3 — `/api/parser`
+- **Сделано:** добавлены `ParserService` и API `GET/PUT /api/parser/config`, `POST /api/parser/run`, `GET /api/parser/logs`; реализовано автосоздание конфигурации парсера (URL донора + JSON-селекторы), ручной запуск парсинга `omoloko.ru` с ограничением количества карточек и выбором полей для обновления; реализована защита ручных правок: при обновлении существующих товаров парсер не затирает поля, отмеченные в `manual_overrides`; добавлено логирование запусков и ошибок в `System_Logs` (`source=parser`) и `Admin_Logs`; роутер подключён в `main.py`
+- **Проверка:** `docker compose build backend`; `docker compose run --rm backend python -m compileall app` (компилируются `app/api/parser.py`, `app/services/parser.py`, `app/main.py`)
+- **Блокеры:** на хосте команда `python` не установлена (проверка выполняется внутри Docker, это штатно)
+- **Следующий шаг:** Э8.1 — Layout + login, forgot-password, first-login
+
+### Запись: 2026-06-21 (Э7.2 — Analytics + Reports + Notifications)
+- **Чат:** Э7.2 — `/api/analytics`, `/api/reports`, `/api/notifications`
+- **Сделано:** добавлены `AnalyticsService`, `ReportsService`, `NotificationService`; реализован `/api/analytics`: сводка продаж пользователя (`/my`), детальные строки (`/my-raw`), баланс (`/balance`), экспорт Excel (`/export`), админ-дашборд (`/dashboard`), аналитика участника (`/users/{id}`); реализован `/api/reports`: CRM-отчёт пользователей с настраиваемыми колонками из `Admin_Settings` (`crm_report_layout`), скачивание Excel, отчёт ошибок импорта (`/sync-errors` + download), GET/PUT `/layout` для CRM-конструктора; реализован `/api/notifications`: список с счётчиком непрочитанных, отметка прочитанным, CRUD шаблонов админом; уведомления подключены к заявкам, подтверждению ИНН/самозанятости и публикации заданий; роутеры подключены в `main.py`
+- **Проверка:** `docker compose build backend`; `docker compose run --rm backend python -m compileall` (новые модули компилируются); `docker compose up -d backend`; `http://localhost:8080/api/health` — 200
+- **Блокеры:** нет
+- **Следующий шаг:** Э7.3 — Parser omoloko.ru
+
+### Запись: 2026-06-21 (Э7.1 — Materials + Content)
+- **Чат:** Э7.1 — `/api/materials`, `/api/content`
+- **Сделано:** добавлены `MaterialsService` и `ContentService`; реализован `/api/materials`: список опубликованных материалов со статусом изучения (`Не начат` / `Начат` / `Изучен`), счётчик «Изучено материалов: X / Y», просмотр материала, фиксация прогресса (`open`, `view_page`, `view_video` ≥95%), CRUD админа с загрузкой файлов (JPG/PNG/PDF/PPTX/MP4 до 100 МБ), скрытие материала, статистика статусов для админа; реализован `/api/content`: `GET/PUT /{slug}` для `faq`, `instructions`, `support_contacts` через `Admin_Settings` (контакты поддержки не в коде); роутеры подключены в `main.py`
+- **Проверка:** `docker compose build backend`; `docker compose run --rm backend python -m compileall app/api/materials.py app/api/content.py app/services/materials.py app/services/content.py`; `docker compose up -d backend`
+- **Блокеры:** нет
+- **Следующий шаг:** Э7.2 — Analytics + reports, Notifications + templates
+
+### Запись: 2026-06-21 (исправление статусов и СБП-кода по ТЗ п.8)
+- **Чат:** bugfix — `orders.py`, `api/orders.py`
+- **Сделано:** переходы статусов заявок приведены к ТЗ 8.2: `verification_pending -> placed/cancelled`, `placed -> confirmed/rejected`, `confirmed -> processing/rejected`, `processing -> rejected` (а `processing -> fulfilled` только через `/fulfill`); в `fulfill_order` добавлено требование статуса `processing`; для СБП-кода добавлен rate limit на отправку и проверку: максимум 5 попыток за 5 минут; срок жизни кода = 5 минут; срок `verification_pending` = 5 минут; при истечении срока заявка автоматически переводится в `cancelled`
+- **Проверка:** `docker compose run --rm backend python -m compileall app/services/orders.py app/api/orders.py`; `docker compose run --rm backend python -m compileall app`
+- **Блокеры:** нет
+- **Следующий шаг:** Э7.1 — Materials + Content
+
+### Запись: 2026-06-21 (исправление ошибок Э4.1 и Э6)
+- **Чат:** bugfix — `points.py`, `orders.py`
+- **Сделано:** убрано дублирование финансовой логики из `OrdersService`; операции резервирования, возврата и списания баллов переведены в единый `PointsService`; добавлены методы `refund_reserved_points_for_request` и `redeem_reserved_points_for_request`; для финансовых операций добавлен единый параметр `commit` (для атомарности в сценариях заявок)
+- **Проверка:** `docker compose run --rm backend python -m compileall app/services/points.py app/services/orders.py`; `docker compose run --rm backend python -m compileall app`
+- **Блокеры:** нет
+- **Следующий шаг:** Э7.1 — Materials + Content
+
+### Запись: 2026-06-21 (централизация финансовой логики во всех этапах)
+- **Чат:** bugfix — `points.py`, `orders.py`, `imports.py`
+- **Сделано:** проведен аудит backend на прямые операции с `Points_Ledger`/`Points_Operations_Log`; дополнительно централизован `ImportsService`: логика создания/обновления импортных начислений перенесена в `PointsService` (новый метод `upsert_import_points_entry`), `imports.py` больше не пишет в финансовые таблицы напрямую; теперь `orders` и `imports` используют единый сервис баллов
+- **Проверка:** `docker compose run --rm backend python -m compileall app/services/points.py app/services/orders.py app/services/imports.py`; `docker compose run --rm backend python -m compileall app`
+- **Блокеры:** нет
+- **Следующий шаг:** Э7.1 — Materials + Content
+
+### Запись: 2026-06-21 (Э6 — rewards + orders полностью)
+- **Чат:** Э6 — `/api/rewards`, `/api/orders`
+- **Сделано:** доработан `/api/rewards`: CRUD каталога + защита системного СБП-приза и новый endpoint `PUT /api/rewards/{id}/visibility` для публикации/скрытия СБП-приза по списку дистрибьюторов; добавлены модель и миграция `prize_distributors` (`0009_migration_h`); полностью реализован `/api/orders`: создание сертификатных и СБП-заявок, ветка `verification_pending`, `POST /api/orders/confirm-code` (отправка/подтверждение кода), `GET /api/orders/my`, `GET /api/orders/all`, `PUT /api/orders/{id}/status`, `PUT /api/orders/{id}/fulfill`; добавлены проверки ИНН/КНД/самозанятости, снимки полей заявки, резерв баллов, возврат при `rejected`, перевод в `redeemed` при `fulfilled`; подключены роутеры `orders` и `rewards` в `main.py`; обновлены требования в ТЗ по endpoint видимости СБП-приза
+- **Проверка:** `docker compose build backend`; `docker compose run --rm backend python -m compileall app`; `docker compose run --rm backend python -m compileall app/api/orders.py app/services/orders.py app/api/rewards.py app/services/rewards.py` (миграция `0009` применена, файлы компилируются)
+- **Блокеры:** нет
+- **Следующий шаг:** Э7.1 — Materials + Content
+
 ### Запись: 2026-06-21 (Э5.2 — импорт продаж)
 - **Чат:** Э5.2 — `POST /api/import/sales`, `GET /api/import/template-sales`
 - **Сделано:** добавлен шаблон `template-sales` и загрузка продаж из `.xlsx`; реализована привязка начислений по кодам `ТП`/`СВ` к пользователям и проверка соответствия дистрибьютору; для каждой строки создаются отдельные начисления ТП и СВ (если баллы > 0); добавлена идемпотентность по ключу строки импорта (повтор файла не дублирует баллы), а при изменении сумм выполняется обновление начисления с записью в `Points_Overwritten_Log`; ошибки строк пишутся в `Import_Error_Log`; добавлена подготовка под Celery: `POST /api/import/sales?use_celery=true` ставит импорт в очередь, создана задача `app.tasks.imports.import_sales_task`
 - **Проверка:** `docker compose build backend`; `docker compose run --rm backend python -m compileall app` (компилируются `app/api/imports.py`, `app/services/imports.py`, `app/tasks/imports.py`)
 - **Блокеры:** нет
 - **Следующий шаг:** Э6.1 — `/api/rewards` (каталог призов)
+
+### Запись: 2026-06-21 (Э6.1 — каталог призов)
+- **Чат:** Э6.1 — `GET/POST/PUT/DELETE /api/rewards`
+- **Сделано:** добавлены `app/api/rewards.py` и `app/services/rewards.py`; реализован CRUD каталога призов: получение списка с пагинацией, создание, редактирование и скрытие карточек; добавлена защита системного СБП-приза «Платеж на карту банка» (нельзя скрыть/удалить и нельзя менять тип); для обычных призов оставлен тип `certificate`; подключён роутер в `app/main.py`
+- **Проверка:** `docker compose build backend`; `docker compose run --rm backend python -m compileall app` (компилируются `app/api/rewards.py`, `app/services/rewards.py`, `app/main.py`)
+- **Блокеры:** нет
+- **Следующий шаг:** Э6.2 — заявка на сертификат
 
 ### Запись: 2026-06-21 (Э5.1 — импорт пользователей)
 - **Чат:** Э5.1 — `POST /api/import/users`, `GET /api/import/template-users`

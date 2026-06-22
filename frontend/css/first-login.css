@@ -1,0 +1,130 @@
+/* Первый вход — пошаговый мастер */
+
+.first-login {
+  max-width: 42rem;
+}
+
+.first-login__intro {
+  margin: 0 0 1.25rem;
+  color: var(--color-text-muted);
+}
+
+.stepper {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.stepper__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  text-align: center;
+  padding: 0.65rem 0.35rem;
+  border-radius: var(--radius-lg);
+  background: #f4fafb;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.stepper__num {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #dceef2;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.stepper__item--active {
+  background: rgba(95, 219, 232, 0.18);
+  color: #12313a;
+  font-weight: 600;
+}
+
+.stepper__item--active .stepper__num {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.stepper__item--done {
+  color: #1f6b3f;
+}
+
+.stepper__item--done .stepper__num {
+  background: #b8e6cb;
+  color: #1f6b3f;
+}
+
+.verify-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.verify-tabs__btn {
+  flex: 1;
+  min-width: 8rem;
+  min-height: var(--touch-min);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.verify-tabs__btn--active {
+  border-color: var(--color-primary-hover);
+  background: rgba(95, 219, 232, 0.15);
+  color: #12313a;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+
+.checkbox-field input {
+  margin-top: 0.2rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--color-primary-hover);
+  flex-shrink: 0;
+}
+
+.first-login__done {
+  text-align: center;
+}
+
+.first-login__done .btn {
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .stepper {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stepper__label {
+    font-size: 0.72rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .stepper {
+    grid-template-columns: 1fr;
+  }
+}

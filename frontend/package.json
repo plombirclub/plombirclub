@@ -1,0 +1,29 @@
+{
+  "name": "plombirclub-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Сборка CSS (Autoprefixer) и JS (Babel + core-js) для промо-портала",
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "browserslist": [
+    "> 0.5%",
+    "last 2 versions",
+    "not dead",
+    "iOS >= 14",
+    "Android >= 8",
+    "Chrome >= 90",
+    "Firefox >= 90",
+    "Safari >= 14",
+    "Edge >= 90"
+  ],
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "autoprefixer": "^10.4.20",
+    "core-js": "^3.39.0",
+    "core-js-bundle": "^3.39.0",
+    "postcss": "^8.4.49",
+    "postcss-import": "^16.1.0"
+  }
+}
