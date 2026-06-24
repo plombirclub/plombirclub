@@ -39,6 +39,19 @@ EXISTING_USER_EMAIL_ERROR = (
     "Email уже зарегистрирован в системе. "
     "Новый пользователь не создавался, существующий участник не изменялся."
 )
+USER_IMPORT_ERROR_HINTS: dict[str, str] = {
+    "Не заполнен «Код участника»": "Заполните колонку «Код участника» (например, ТП-001 или СВ-001) и загрузите файл повторно.",
+    "Не заполнен «Дистрибьютор»": "Укажите дистрибьютора в колонке «Дистрибьютор» точно как в разделе «Дистрибьюторы».",
+    "Не заполнена «Должность»": "Укажите должность: «ТП» или «СВ».",
+    "Не заполнено «ФИО»": "Заполните полное имя участника в колонке «ФИО».",
+    "Не заполнен «Email»": "Заполните рабочий email участника без пробелов.",
+    "Некорректный Email": "Проверьте формат email (пример: user@example.ru) и удалите лишние пробелы.",
+    "Дублирующийся Email в файле импорта": "Оставьте этот email только в одной строке файла.",
+    "Дублирующийся код участника в файле импорта": "Оставьте каждый код участника только в одной строке.",
+    EXISTING_USER_EMAIL_ERROR: "Если это существующий пользователь, используйте «Забыли пароль?»; если нужен новый — укажите другой email.",
+    "Указанный дистрибьютор не найден": "Сначала создайте дистрибьютора в админке («Дистрибьюторы»), затем повторите импорт.",
+    "Код участника уже привязан к другому пользователю": "Используйте уникальный код участника или исправьте код у нужной строки.",
+}
 MSK_TZ = ZoneInfo("Europe/Moscow")
 ZERO = Decimal("0.00")
 DECIMAL_STEP = Decimal("0.01")
@@ -352,6 +365,21 @@ class ImportsService:
             seen_codes.add(participant_code_key)
 
             temporary_password = _temporary_password()
+            email_error = await EmailService(self.db).send_import_welcome(
+                to_email=email,
+                temporary_password=temporary_password,
+            )
+            if email_error:
+                failed_count += 1
+                self._record_users_import_row_error(
+                    row_errors=row_errors,
+                    row_number=row_number,
+                    email=email,
+                    error_message=f"Пользователь не создан: письмо с временным паролем не отправлено: {email_error}",
+                    raw_row_data=raw_payload,
+                )
+                continue
+
             user = User(
                 email=email,
                 password_hash=hash_password(temporary_password),
@@ -370,22 +398,7 @@ class ImportsService:
             users_by_email[email] = user
             users_by_code[participant_code_key] = user
             created_count += 1
-
-            email_error = await EmailService(self.db).send_import_welcome(
-                to_email=email,
-                temporary_password=temporary_password,
-            )
-            if email_error:
-                failed_count += 1
-                self._record_users_import_row_error(
-                    row_errors=row_errors,
-                    row_number=row_number,
-                    email=email,
-                    error_message=f"Пользователь создан, но письмо не отправлено: {email_error}",
-                    raw_row_data=raw_payload,
-                )
-            else:
-                emailed_count += 1
+            emailed_count += 1
 
         await self.db.commit()
         return {
@@ -692,9 +705,10 @@ class ImportsService:
         error_message: str,
         raw_row_data: dict[str, Any],
     ) -> None:
+        formatted_message = _build_user_import_error_message(error_message)
         self._log_import_error(
             row_number=row_number,
-            error_message=error_message,
+            error_message=formatted_message,
             raw_row_data=raw_row_data,
             import_type=ImportType.users,
         )
@@ -702,7 +716,7 @@ class ImportsService:
             {
                 "row_number": row_number,
                 "email": email,
-                "message": error_message,
+                "message": formatted_message,
                 "row": raw_row_data,
             }
         )
@@ -734,3 +748,19 @@ def _build_users_import_message(*, created_count: int, failed_count: int, emaile
         f"Импорт завершён частично: создано {created_count}, ошибок {failed_count}, "
         f"писем отправлено {emailed_count}."
     )
+
+
+def _build_user_import_error_message(error_message: str) -> str:
+    if "Как исправить:" in error_message:
+        return error_message
+
+    hint = USER_IMPORT_ERROR_HINTS.get(error_message)
+    if hint is None and error_message.startswith("Пользователь не создан: письмо с временным паролем не отправлено:"):
+        hint = (
+            "Проверьте SMTP-настройки в .env (SMTP_HOST/SMTP_USER/SMTP_PASSWORD/SMTP_FROM_EMAIL), "
+            "после исправления повторите импорт этой строки."
+        )
+
+    if hint:
+        return f"{error_message} Как исправить: {hint}"
+    return error_message

@@ -1,9 +1,9 @@
 # PROGRESS — промо-портал «Чистая Линия»
 
-**Обновлено:** 2026-06-23 (Э11 — деплой: prod-конфиги, deploy.sh, HTTPS-скрипт, инструкция)  
-**Текущий этап:** 11 🔄  
-**Следующий шаг:** Завершить Э11.1–Э11.3 на сервере (VPS + DNS + выпуск SSL), затем перейти к Э12
-**Правило:** 1 подэтап = 1 новый чат Agent (см. PLAN)
+**Обновлено:** 2026-06-24 (синхронизация post-deploy: auth/imports → GitHub → deploy; rule git+deploy)  
+**Текущий этап:** 11 ✅  
+**Следующий шаг:** Э12.1 — Автотесты критичных сценариев  
+**Правило:** 1 подэтап = 1 новый чат Agent (см. PLAN). Деплой только через GitHub — `.cursor/rules/plombirclub-git-i-deploy.mdc`
 
 **Документы:** `ТЗ оптимизированное для ИИ-разработчика.md` · `PLAN-техническая-реализация.md`
 
@@ -182,12 +182,12 @@
 
 | # | Задача | Статус | Режим |
 |---|--------|--------|-------|
-| 11.1 | VPS Timeweb настроен | 🔄 | Agent + владелец |
-| 11.2 | DNS plombirclub.ru → VPS | 🔄 | Agent + владелец |
-| 11.3 | HTTPS (Let's Encrypt) | 🔄 | Agent |
+| 11.1 | VPS Timeweb настроен | ✅ | Agent + владелец |
+| 11.2 | DNS plombirclub.ru и www → VPS | ✅ | Agent + владелец |
+| 11.3 | HTTPS (Let's Encrypt) | ✅ | Agent |
 | 11.4 | deploy.sh + бэкапы | ✅ | Agent |
 
-**Итог этапа 11:** 🔄
+**Итог этапа 11:** ✅
 
 ---
 
@@ -204,6 +204,38 @@
 ---
 
 ## Журнал (передача между чатами)
+
+### Запись: 2026-06-24 (post-deploy — подсказки в ошибках импорта пользователей)
+- **Чат:** bugfix — `imports.py` (отчёт импорта для админа)
+- **Причина:** при ошибке в Excel админ видел сухой технический текст без инструкции, как исправить строку и перезагрузить файл
+- **Сделано:** словарь `USER_IMPORT_ERROR_HINTS` и функция форматирования сообщений — к каждой типовой ошибке добавляется блок «Как исправить: …» (обязательные поля, формат email, дубли, дистрибьютор, код участника); сообщения попадают в отчёт импорта в админке
+- **Проверка:** локальный импорт файла с намеренными ошибками — в отчёте видны подсказки; на бою проверено после выката
+- **Git:** push в `main` + deploy через `deploy.sh` (синхронизация 2026-06-24)
+
+### Запись: 2026-06-24 (post-deploy — первый вход импортированных пользователей на бою)
+- **Чат:** bugfix + ops — импорт, SMTP, forgot-password, очистка тестовых данных
+- **Причина:** на `plombirclub.ru` импорт создавал пользователей даже когда письмо с временным паролем не уходило (SMTP в production `.env` был с заглушками); при «Забыли пароль?» пароль менялся в БД, но письмо не доставлялось — вход невозможен; часть писем содержала локальный URL (`localhost`) из-за неверного `APP_URL` до настройки прода
+- **Сделано:** на сервере настроен SMTP Mail.ru (`p.security@plombirclub.ru`), проверен login из контейнера backend; в `imports.py` — пользователь **не создаётся**, если `EmailService.send_import_welcome` вернул ошибку; в `auth.py` (`forgot-password`) — откат `password_hash` и статусов, если письмо не отправилось; удалены тестовые пользователи, созданные через импорт (локально и на бою, кроме admin); правки выкатаны на production (`deploy.sh` / пересборка backend)
+- **Проверка:** SMTP login OK из backend-контейнера; импорт с ошибкой email — пользователь не появляется в списке; успешный импорт — письмо с паролем и вход на `https://plombirclub.ru`
+- **Блокеры:** устранены
+- **Git:** push в `main` + deploy (синхронизация 2026-06-24)
+- **Следующий шаг:** Э12.1
+
+### Запись: 2026-06-24 (Э11 — деплой полностью завершён)
+- **Чат:** Э11 — деплой (VPS Timeweb, DNS, HTTPS, production запуск)
+- **Сделано:** настроен доступ по SSH-ключу; сервер синхронизирован до `origin/main`; production `.env` подготовлен, PostgreSQL и Redis подняты и healthy; весь стек Docker (`backend`, `frontend`, `postgres`, `redis`, `worker`, `scheduler`, `nginx`) запущен; миграции Alembic применены; выпущен SSL-сертификат Let’s Encrypt на `plombirclub.ru` и `www.plombirclub.ru`; выполнен `deploy.sh` (backup -> pull -> build -> migrate -> up -> health-check)
+- **Проверка:** `docker compose ps` — все контейнеры Up; `curl -I https://plombirclub.ru` — HTTP/2 200; `curl -I https://www.plombirclub.ru` — HTTP/2 200; `curl -fsS https://plombirclub.ru/api/health` и `https://www.plombirclub.ru/api/health` — `{\"status\":\"ok\",\"service\":\"plombirclub-api\"}`
+- **Блокеры:** устранены (DNS `www` добавлен, SSL на оба домена выпущен)
+- **Следующий шаг:** Э12.1 — Автотесты критичных сценариев
+
+### Запись: 2026-06-23 (доработки перед прод-запуском — коммит c5eb172)
+- **Чат:** несколько сессий Agent (функционал + prod-контур), сведено в один push `c5eb172`
+- **Сделано (backend):** миграции Alembic `0013`–`0018` — шаблоны писем в БД (`email_templates`), загрузка картинки приза, дата принятия соглашений, поля пищевой ценности у товаров, блокировка повторного изменения ФИО (`personal_name_locked`), увеличение длины `source` в `points_ledger`; сервис `EmailService` (SMTP, подстановка `{login}`, `{temporary_password}`, `{site_url}`); доработки `imports`, `analytics`, `content`, `notifications`, `points`, `products`, `rewards`, `users`, `orders`, `parser`; утилита `files.py` для загрузок
+- **Сделано (frontend):** страницы `/pages/points.html`, `/pages/agreement.html`; просмотр документов `document-viewer.js`; админка дистрибьюторов (`/admin/distributors.html`); доработки админ-import, content, notifications, points, prizes, products; логотип `frontend/images/logo.png`, скрипт `scripts/process-logo.py`; стили `points.css`, доработки profile/catalog/instructions
+- **Сделано (деплой):** в том же коммите — `deploy.sh`, `docker-compose.prod.yml`, `nginx.prod.conf`, `setup-https.sh`, `DEPLOY-TIMEWEB.md` (дублирует и дополняет запись Э11 ниже)
+- **Проверка:** `docker compose build`; миграции до `0018`; локально — новые страницы и админ-разделы открываются; push в `origin/main`
+- **Блокеры:** нет
+- **Примечание:** отдельные записи в журнале по parser/products (ниже) — часть работ вошла в этот коммит
 
 ### Запись: 2026-06-23 (bugfix — продукция: изображения, тексты, фильтр полей парсера)
 - **Чат:** bugfix — `parser.py`, `products.js`, `admin-products.js`
@@ -478,7 +510,9 @@
 
 | Дата | Проблема | Решение | Статус |
 |------|----------|---------|--------|
-| — | — | — | — |
+| 2026-06-24 | На бою импорт создавал пользователя без доставки письма (SMTP-заглушки) | Настроен SMTP Mail.ru; импорт не создаёт user при ошибке email | ✅ |
+| 2026-06-24 | «Забыли пароль?» менял пароль, если письмо не ушло | Rollback в `auth.py` при ошибке отправки | ✅ |
+| 2026-06-24 | Post-deploy правки не были в GitHub | Commit+push + deploy; rule `.cursor/rules/plombirclub-git-i-deploy.mdc` | ✅ |
 
 ---
 

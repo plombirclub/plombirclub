@@ -442,22 +442,32 @@ async def forgot_password(
 
     user = await db.scalar(select(User).where(User.email == payload.email.lower()))
     if user is not None and user.is_active:
+        user_email = user.email
         generated_password = secrets.token_urlsafe(8)
+        previous_password_hash = user.password_hash
+        previous_temp_changed = user.temporary_password_changed
+        previous_registration_complete = user.is_registration_complete
+
         user.password_hash = hash_password(generated_password)
         user.temporary_password_changed = False
         user.is_registration_complete = _calculate_registration_complete(user)
-        await db.commit()
 
         email_error = await EmailService(db).send_forgot_password(
             to_email=user.email,
             temporary_password=generated_password,
         )
         if email_error:
+            user.password_hash = previous_password_hash
+            user.temporary_password_changed = previous_temp_changed
+            user.is_registration_complete = previous_registration_complete
+            await db.rollback()
             logger.warning(
-                "forgot-password: письмо не отправлено для %s: %s",
-                user.email,
+                "forgot-password: письмо не отправлено для %s, пароль не изменён: %s",
+                user_email,
                 email_error,
             )
+        else:
+            await db.commit()
 
     data = {"message": "Если аккаунт существует, временный пароль отправлен на email"}
 
