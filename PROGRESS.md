@@ -205,6 +205,13 @@
 
 ## Журнал (передача между чатами)
 
+### Запись: 2026-06-24 (синхронизация GitHub — commit `3cf0c87`)
+- **Чат:** post-deploy sync + rule git/deploy
+- **Сделано:** `auth.py` (rollback forgot-password при ошибке email), `imports.py` (не создавать user без письма + подсказки в отчёте), обновлён `PROGRESS.md`; добавлен rule `.cursor/rules/plombirclub-git-i-deploy.mdc` (деплой только через GitHub)
+- **Git:** push `3cf0c87` в `origin/main`
+- **Деплой:** `./scripts/deploy.sh` на `/opt/plombirclub` — выполнить на сервере после push (SSH из среды агента недоступен)
+- **Следующий шаг:** deploy на бою → Э12.1
+
 ### Запись: 2026-06-24 (post-deploy — подсказки в ошибках импорта пользователей)
 - **Чат:** bugfix — `imports.py` (отчёт импорта для админа)
 - **Причина:** при ошибке в Excel админ видел сухой технический текст без инструкции, как исправить строку и перезагрузить файл
