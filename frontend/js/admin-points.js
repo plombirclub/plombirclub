@@ -4,35 +4,37 @@
   var L = PlombirAdminLayout;
   var state = { page: 1, totalPages: 1, period: "" };
 
+  function previousMonth() {
+    var now = new Date();
+    var d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var month = String(d.getMonth() + 1).padStart(2, "0");
+    return d.getFullYear() + "-" + month;
+  }
+
+  function periodLabel(period) {
+    var parts = String(period || "").split("-");
+    if (parts.length !== 2) return period || "";
+    var monthNames = [
+      "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+      "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+    ];
+    var idx = Number(parts[1]) - 1;
+    if (idx < 0 || idx > 11) return period;
+    return monthNames[idx] + " " + parts[0];
+  }
+
   function renderPage(container) {
+    if (!state.period) state.period = previousMonth();
     container.innerHTML =
       '<div id="page-alert"></div>' +
       '<div class="admin-card">' +
-        '<p class="admin-modal__meta">Участники с баллами в статусе «ожидают активации». Пользователь активирует их сам в ЛК; администратор может активировать вручную в карточке пользователя.</p>' +
+        '<p class="admin-modal__meta">Участники с pending-баллами за предыдущий месяц. Задача и уведомление отправляются только после нажатия кнопки админом.</p>' +
         '<div class="admin-toolbar">' +
-          '<label class="field field--sm">' +
-            '<span class="field__label">Период (YYYY-MM)</span>' +
-            '<input class="field__input" type="text" id="points-period" placeholder="2026-06" value="' +
-              L.escapeHtml(state.period) + '" pattern="\\d{4}-\\d{2}">' +
-          "</label>" +
-          '<button type="button" class="btn btn--secondary btn--sm" id="points-filter-btn">Применить</button>' +
-          '<button type="button" class="btn btn--ghost btn--sm" id="points-reset-btn">Сбросить</button>' +
+          '<p class="admin-modal__meta"><strong>Период:</strong> ' + L.escapeHtml(periodLabel(state.period)) + "</p>" +
         "</div>" +
         '<div id="points-table"><p class="admin-empty">Загрузка…</p></div>' +
         '<div class="admin-pagination" id="points-pagination" hidden></div>' +
       "</div>";
-
-    document.getElementById("points-filter-btn").addEventListener("click", function () {
-      state.period = document.getElementById("points-period").value.trim();
-      state.page = 1;
-      loadData(container);
-    });
-    document.getElementById("points-reset-btn").addEventListener("click", function () {
-      state.period = "";
-      state.page = 1;
-      document.getElementById("points-period").value = "";
-      loadData(container);
-    });
 
     loadData(container);
   }
@@ -57,6 +59,11 @@
         tableHost.innerHTML = '<p class="admin-empty">Нет участников с ожидающими активацией баллами</p>';
       } else {
         var rows = items.map(function (item) {
+          var sendDisabled = item.activation_task_sent ? " disabled" : "";
+          var sendLabel = item.activation_task_sent ? "Уже отправлено" : "Отправить задачу на активацию";
+          var sentMeta = item.activation_task_sent_at
+            ? '<div class="admin-micro">' + L.escapeHtml("Отправлено: " + L.formatDate(item.activation_task_sent_at)) + "</div>"
+            : "";
           return (
             "<tr>" +
               "<td>" + L.escapeHtml(item.full_name || "—") + "</td>" +
@@ -64,18 +71,26 @@
               "<td>" + L.escapeHtml(item.distributor_name || "—") + "</td>" +
               "<td><strong>" + Number(item.pending_amount).toLocaleString("ru-RU") + "</strong></td>" +
               "<td>" + item.pending_records + "</td>" +
-              '<td><a class="admin-doc-link" href="/admin/users.html" onclick="sessionStorage.setItem(\'admin_open_user\',\'' +
-                item.user_id + '\')">Открыть</a></td>' +
+              "<td>" +
+                '<button type="button" class="btn btn--secondary btn--sm points-send-task" data-user-id="' +
+                  item.user_id + '"' + sendDisabled + ">" + sendLabel + "</button>" +
+                sentMeta +
+              "</td>" +
             "</tr>"
           );
         }).join("");
         tableHost.innerHTML =
           '<div class="admin-table-wrap">' +
             '<table class="admin-table">' +
-              "<thead><tr><th>ФИО</th><th>Email</th><th>Дистрибьютор</th><th>Сумма pending</th><th>Записей</th><th></th></tr></thead>" +
+              "<thead><tr><th>ФИО</th><th>Email</th><th>Дистрибьютор</th><th>Сумма pending</th><th>Записей</th><th>Действие</th></tr></thead>" +
               "<tbody>" + rows + "</tbody>" +
             "</table>" +
           "</div>";
+        tableHost.querySelectorAll(".points-send-task").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            sendActivationTask(btn.getAttribute("data-user-id"), rootContainer);
+          });
+        });
       }
 
       renderPagination(rootContainer);
@@ -111,6 +126,27 @@
         loadData(rootContainer);
       }
     });
+  }
+
+  function sendActivationTask(userId, rootContainer) {
+    var alertBox = document.getElementById("page-alert");
+    PlombirApi.post("/users/" + userId + "/send-activation-task", { period_month: state.period })
+      .then(function (result) {
+        if (!result.response.ok || !result.data || !result.data.success) {
+          L.showToast(
+            alertBox,
+            PlombirApi.extractErrorMessage(result.data, "Не удалось отправить задачу"),
+            "error"
+          );
+          return;
+        }
+        var data = result.data.data || {};
+        var msg = data.already_sent
+          ? "Задача уже была отправлена ранее"
+          : "Задача и уведомление успешно отправлены";
+        L.showToast(alertBox, msg, "success");
+        loadData(rootContainer);
+      });
   }
 
   PlombirAuth.requireAdmin().then(function (profile) {

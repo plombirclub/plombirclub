@@ -222,3 +222,230 @@ async def save_task_cover_image(*, upload: UploadFile) -> str:
     target_path.write_bytes(content)
 
     return str(Path("tasks") / "covers" / stored_name).replace("\\", "/")
+
+
+ALLOWED_PRIZE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+PRIZE_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+PRIZE_IMAGE_MIMES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+}
+
+
+def _detect_prize_image_mime(header: bytes) -> str | None:
+    if header.startswith(b"GIF87a") or header.startswith(b"GIF89a"):
+        return "image/gif"
+    if header.startswith(b"RIFF") and len(header) >= 12 and header[8:12] == b"WEBP":
+        return "image/webp"
+    return _detect_mime(header)
+
+
+async def save_prize_image(*, upload: UploadFile) -> str:
+    if not upload.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Имя файла не указано",
+        )
+
+    ext = _normalize_extension(upload.filename)
+    if ext == ".webp":
+        storage_ext = ".webp"
+    elif ext == ".gif":
+        storage_ext = ".gif"
+    elif ext not in ALLOWED_PRIZE_IMAGE_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Допустимые форматы: JPG, PNG, WEBP, GIF",
+        )
+
+    content_type = (upload.content_type or "").split(";")[0].strip().lower()
+    if content_type and content_type not in PRIZE_IMAGE_MIMES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Недопустимый тип файла",
+        )
+
+    content = await upload.read()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Файл пустой",
+        )
+    if len(content) > PRIZE_IMAGE_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Размер изображения не должен превышать 5 МБ",
+        )
+
+    detected_mime = _detect_prize_image_mime(content[:16])
+    if detected_mime is None or detected_mime not in PRIZE_IMAGE_MIMES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Содержимое файла не соответствует допустимому формату",
+        )
+
+    if ext in {".jpg", ".jpeg"}:
+        storage_ext = ".jpg"
+    elif ext == ".png":
+        storage_ext = ".png"
+
+    target_dir = Path(settings.upload_dir) / "prizes"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    stored_name = f"{uuid.uuid4()}{storage_ext}"
+    target_path = target_dir / stored_name
+    target_path.write_bytes(content)
+
+    return str(Path("prizes") / stored_name).replace("\\", "/")
+
+
+async def save_instruction_file(*, upload: UploadFile) -> tuple[str, str]:
+    """Returns (file_path, content_type) where content_type is pdf or image."""
+    if not upload.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Имя файла не указано",
+        )
+
+    ext = _normalize_extension(upload.filename)
+    if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".pdf"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Допустимые форматы: JPG, PNG, WEBP, GIF, PDF",
+        )
+
+    allowed_mimes = {
+        *PRIZE_IMAGE_MIMES,
+        "application/pdf",
+    }
+    content_type = (upload.content_type or "").split(";")[0].strip().lower()
+    if content_type and content_type not in allowed_mimes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Недопустимый тип файла",
+        )
+
+    content = await upload.read()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Файл пустой",
+        )
+    max_bytes = settings.material_max_bytes
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Размер файла не должен превышать {settings.material_max_mb} МБ",
+        )
+
+    if ext == ".pdf":
+        detected = _detect_mime(content[:16])
+        if detected != "application/pdf":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Файл не является PDF",
+            )
+        storage_ext = ".pdf"
+        logical_type = "pdf"
+    else:
+        detected = _detect_prize_image_mime(content[:16])
+        if detected is None or detected not in PRIZE_IMAGE_MIMES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Содержимое файла не соответствует допустимому формату",
+            )
+        if ext in {".jpg", ".jpeg"}:
+            storage_ext = ".jpg"
+        elif ext == ".webp":
+            storage_ext = ".webp"
+        elif ext == ".gif":
+            storage_ext = ".gif"
+        else:
+            storage_ext = ".png"
+        logical_type = "image"
+
+    target_dir = Path(settings.upload_dir) / "instructions"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    stored_name = f"{uuid.uuid4()}{storage_ext}"
+    target_path = target_dir / stored_name
+    target_path.write_bytes(content)
+
+    return str(Path("instructions") / stored_name).replace("\\", "/"), logical_type
+
+
+async def save_legal_file(*, upload: UploadFile) -> tuple[str, str]:
+    """Returns (file_path, content_type) where content_type is pdf or image."""
+    if not upload.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Имя файла не указано",
+        )
+
+    ext = _normalize_extension(upload.filename)
+    if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".pdf"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Допустимые форматы: JPG, PNG, WEBP, GIF, PDF",
+        )
+
+    allowed_mimes = {
+        *PRIZE_IMAGE_MIMES,
+        "application/pdf",
+    }
+    content_type = (upload.content_type or "").split(";")[0].strip().lower()
+    if content_type and content_type not in allowed_mimes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Недопустимый тип файла",
+        )
+
+    content = await upload.read()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Файл пустой",
+        )
+    max_bytes = settings.material_max_bytes
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Размер файла не должен превышать {settings.material_max_mb} МБ",
+        )
+
+    if ext == ".pdf":
+        detected = _detect_mime(content[:16])
+        if detected != "application/pdf":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Файл не является PDF",
+            )
+        storage_ext = ".pdf"
+        logical_type = "pdf"
+    else:
+        detected = _detect_prize_image_mime(content[:16])
+        if detected is None or detected not in PRIZE_IMAGE_MIMES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Содержимое файла не соответствует допустимому формату",
+            )
+        if ext in {".jpg", ".jpeg"}:
+            storage_ext = ".jpg"
+        elif ext == ".webp":
+            storage_ext = ".webp"
+        elif ext == ".gif":
+            storage_ext = ".gif"
+        else:
+            storage_ext = ".png"
+        logical_type = "image"
+
+    target_dir = Path(settings.upload_dir) / "legal"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    stored_name = f"{uuid.uuid4()}{storage_ext}"
+    target_path = target_dir / stored_name
+    target_path.write_bytes(content)
+
+    return str(Path("legal") / stored_name).replace("\\", "/"), logical_type

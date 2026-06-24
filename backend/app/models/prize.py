@@ -31,3 +31,4 @@ class Prize(Base, TimestampMixin):
     is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    image_file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

@@ -9,7 +9,15 @@ from app.models.admin_setting import AdminSetting
 from app.models.user import User
 from app.services.users import write_admin_log
 
-ALLOWED_CONTENT_SLUGS = frozenset({"faq", "instructions", "support_contacts"})
+ALLOWED_CONTENT_SLUGS = frozenset({"faq", "instructions", "support_contacts", "legal_documents"})
+LEGAL_DOCUMENT_KEYS = ("personal_data", "program_rules", "email_notifications")
+
+DEFAULT_LEGAL_DOCUMENT = {
+    "title": "",
+    "text": "",
+    "file_path": None,
+    "content_type": None,
+}
 
 DEFAULT_CONTENT: dict[str, dict[str, Any]] = {
     "faq": {"items": []},
@@ -23,6 +31,22 @@ DEFAULT_CONTENT: dict[str, dict[str, Any]] = {
         "email": "",
         "work_hours": "",
         "text": "",
+    },
+    "legal_documents": {
+        "documents": {
+            "personal_data": {
+                **DEFAULT_LEGAL_DOCUMENT,
+                "title": "Согласие на обработку персональных данных (ФЗ-152)",
+            },
+            "program_rules": {
+                **DEFAULT_LEGAL_DOCUMENT,
+                "title": "Пользовательское соглашение",
+            },
+            "email_notifications": {
+                **DEFAULT_LEGAL_DOCUMENT,
+                "title": "Согласие на получение email-уведомлений",
+            },
+        },
     },
 }
 
@@ -59,6 +83,12 @@ def _normalize_instruction_items(items: list[dict[str, Any]]) -> list[dict[str, 
         title = str(item.get("title", "")).strip()
         description = str(item.get("description", "")).strip()
         file_path = str(item.get("file_path", "")).strip() or None
+        content_type = str(item.get("content_type", "")).strip() or None
+        if file_path and not content_type:
+            if file_path.lower().endswith(".pdf"):
+                content_type = "pdf"
+            else:
+                content_type = "image"
         if not title and not description and not file_path:
             continue
 
@@ -69,6 +99,7 @@ def _normalize_instruction_items(items: list[dict[str, Any]]) -> list[dict[str, 
                 "title": title,
                 "description": description,
                 "file_path": file_path,
+                "content_type": content_type,
                 "sort_order": int(item.get("sort_order", index)),
                 "is_published": bool(item.get("is_published", True)),
             }
@@ -84,6 +115,33 @@ def _normalize_support_contacts(value: dict[str, Any]) -> dict[str, Any]:
         "work_hours": str(value.get("work_hours", "")).strip(),
         "text": str(value.get("text", "")).strip(),
     }
+
+
+def _normalize_legal_document(key: str, value: dict[str, Any]) -> dict[str, Any]:
+    default_title = DEFAULT_CONTENT["legal_documents"]["documents"][key]["title"]
+    file_path = str(value.get("file_path", "")).strip() or None
+    content_type = str(value.get("content_type", "")).strip() or None
+    if file_path and not content_type:
+        content_type = "pdf" if file_path.lower().endswith(".pdf") else "image"
+    return {
+        "title": str(value.get("title", default_title)).strip() or default_title,
+        "text": str(value.get("text", "")).strip(),
+        "file_path": file_path,
+        "content_type": content_type,
+    }
+
+
+def _normalize_legal_documents(value: dict[str, Any]) -> dict[str, Any]:
+    documents = value.get("documents", value)
+    if not isinstance(documents, dict):
+        raise ValueError("Юридические документы должны быть объектом")
+    normalized: dict[str, Any] = {}
+    for key in LEGAL_DOCUMENT_KEYS:
+        item = documents.get(key, {})
+        if not isinstance(item, dict):
+            item = {}
+        normalized[key] = _normalize_legal_document(key, item)
+    return {"documents": normalized}
 
 
 def _validate_and_normalize_content(slug: str, value: dict[str, Any]) -> dict[str, Any]:
@@ -106,6 +164,9 @@ def _validate_and_normalize_content(slug: str, value: dict[str, Any]) -> dict[st
 
     if slug == "support_contacts":
         return _normalize_support_contacts(value)
+
+    if slug == "legal_documents":
+        return _normalize_legal_documents(value)
 
     raise ValueError("Неизвестный раздел контента")
 

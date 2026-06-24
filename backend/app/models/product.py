@@ -41,6 +41,8 @@ class Product(Base, TimestampMixin):
     unit_volume: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     net_weight: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     pieces_per_box: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    shelf_life: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    nutrition_facts: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     source: Mapped[ProductSource] = mapped_column(
         Enum(ProductSource, name="product_source", native_enum=False, length=20),

@@ -24,6 +24,7 @@
     "core-js": "^3.39.0",
     "core-js-bundle": "^3.39.0",
     "postcss": "^8.4.49",
-    "postcss-import": "^16.1.0"
+    "postcss-import": "^16.1.0",
+    "pdfjs-dist": "3.11.174"
   }
 }

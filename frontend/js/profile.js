@@ -18,17 +18,20 @@
 
   var state = {
     profile: null,
+    legalDocs: null,
     ordersPage: 1,
     ordersTotalPages: 1,
     activeTab: "profile",
   };
 
+  var AGREEMENT_ITEMS = [
+    { key: "personal_data", fallback: "Согласие на обработку персональных данных (ФЗ-152)" },
+    { key: "program_rules", fallback: "Пользовательское соглашение" },
+    { key: "email_notifications", fallback: "Согласие на получение email-уведомлений" },
+  ];
+
   function initials(profile) {
-    var name = profile.full_name || [profile.first_name, profile.last_name].filter(Boolean).join(" ");
-    if (!name) return (profile.email || "?").charAt(0).toUpperCase();
-    var parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
-    return parts[0].charAt(0).toUpperCase();
+    return PlombirLayout.userInitials(profile);
   }
 
   function formatDate(iso) {
@@ -102,9 +105,52 @@
     if (tab === "orders") loadOrders(true);
   }
 
+  function formatDateShort(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+
+  function agreementTitle(key) {
+    var docs = (state.legalDocs && state.legalDocs.documents) || {};
+    var item = docs[key] || {};
+    var found = AGREEMENT_ITEMS.find(function (entry) { return entry.key === key; });
+    return item.title || (found && found.fallback) || "Документ";
+  }
+
+  function renderAgreementsSection(profile) {
+    if (!profile.agreements_accepted && !profile.is_registration_complete) return "";
+
+    var acceptedAt = formatDateShort(profile.agreements_accepted_at || profile.updated_at);
+    var rows = AGREEMENT_ITEMS.map(function (entry) {
+      var title = agreementTitle(entry.key);
+      return (
+        '<li class="profile-agreements__item">' +
+          '<span class="profile-agreements__mark" aria-hidden="true">✓</span>' +
+          '<div class="profile-agreements__body">' +
+            '<a class="profile-agreements__link" href="/pages/agreement.html?doc=' + entry.key + '">' +
+              PlombirLayout.escapeHtml(title) +
+            "</a>" +
+            '<p class="profile-agreements__meta">Принято: ' + PlombirLayout.escapeHtml(acceptedAt) + "</p>" +
+          "</div>" +
+        "</li>"
+      );
+    }).join("");
+
+    return (
+      '<div class="profile-agreements">' +
+        '<h2 class="profile-section__title">Принятые согласия</h2>' +
+        '<p class="profile-section__hint">Документы, которые вы подтвердили при первом входе в личный кабинет.</p>' +
+        '<ul class="profile-agreements__list">' + rows + "</ul>" +
+      "</div>"
+    );
+  }
+
   function renderProfileForm(profile) {
     var innLocked = profile.inn_locked;
     var kndLocked = profile.knd_1122035_locked;
+    var nameLocked = profile.personal_name_locked;
     var innDocDone = !!profile.inn_document_path;
     var kndDocDone = !!profile.knd_1122035_document_path;
 
@@ -121,11 +167,12 @@
           '<div id="profile-alert"></div>' +
           '<form id="profile-form" class="profile-section" novalidate>' +
             '<h2 class="profile-section__title">Основные данные</h2>' +
+            '<p class="profile-section__hint">Фамилия, имя и отчество можно сохранить только один раз. После сохранения изменить их может только администратор. Поле «Ф.И.О.» заполняется при регистрации и не редактируется.</p>' +
             '<div class="profile-form-grid profile-form-grid--2">' +
-              field("last_name", "Фамилия", profile.last_name, false) +
-              field("first_name", "Имя", profile.first_name, false) +
-              field("middle_name", "Отчество", profile.middle_name, false) +
-              field("full_name", "Полное имя", profile.full_name, false) +
+              field("last_name", "Фамилия", profile.last_name, false, "text", nameLocked) +
+              field("first_name", "Имя", profile.first_name, false, "text", nameLocked) +
+              field("middle_name", "Отчество", profile.middle_name, false, "text", nameLocked) +
+              field("full_name", "Ф.И.О.", profile.full_name, true) +
               field("email", "Email", profile.email, true) +
               field("phone", "Телефон", formatPhone(profile.phone), true) +
               field("participant_code", "Код участника", profile.participant_code || "—", true) +
@@ -171,32 +218,36 @@
             '<div class="profile-actions">' +
               '<button type="submit" class="btn btn--primary" id="profile-save">Сохранить</button>' +
             "</div>" +
-            '<div class="password-panel">' +
-              '<button type="button" class="btn btn--secondary password-panel__toggle" id="password-toggle">Сменить пароль</button>' +
-              '<form id="password-form" class="password-panel__form">' +
-                field("current_password", "Текущий пароль", "", false, "password") +
-                field("new_password", "Новый пароль", "", false, "password") +
-                field("confirm_password", "Повторите новый пароль", "", false, "password") +
-                '<div class="profile-actions">' +
-                  '<button type="submit" class="btn btn--primary">Обновить пароль</button>' +
-                "</div>" +
-              "</form>" +
-            "</div>" +
           "</form>" +
+          '<div class="password-panel">' +
+            '<button type="button" class="btn btn--secondary password-panel__toggle" id="password-toggle">Сменить пароль</button>' +
+            '<form id="password-form" class="password-panel__form">' +
+              field("current_password", "Текущий пароль", "", false, "password") +
+              field("new_password", "Новый пароль", "", false, "password") +
+              field("confirm_password", "Повторите новый пароль", "", false, "password") +
+              '<div class="profile-actions">' +
+                '<button type="submit" class="btn btn--primary">Обновить пароль</button>' +
+              "</div>" +
+            "</form>" +
+          "</div>" +
+          renderAgreementsSection(profile) +
         "</div>" +
       "</div>"
     );
   }
 
-  function field(name, label, value, readonly, type) {
+  function field(name, label, value, readonly, type, disabled) {
     type = type || "text";
     var id = "field-" + name;
+    var attrs = "";
+    if (readonly) attrs += "readonly ";
+    if (disabled) attrs += "disabled ";
     return (
       '<div class="field">' +
         '<label class="field__label" for="' + id + '">' + PlombirLayout.escapeHtml(label) + "</label>" +
         '<input class="field__input" id="' + id + '" name="' + name + '" type="' + type + '" ' +
-          (readonly ? "readonly" : "") +
-          ' value="' + PlombirLayout.escapeHtml(value || "") + '">' +
+          attrs +
+          'value="' + PlombirLayout.escapeHtml(value || "") + '">' +
       "</div>"
     );
   }
@@ -386,12 +437,18 @@
   function saveProfile(profile, alertBox) {
     PlombirLayout.clearAlert(alertBox);
 
-    var payload = {
-      full_name: val("full_name"),
-      first_name: val("first_name"),
-      last_name: val("last_name"),
-      middle_name: val("middle_name"),
-    };
+    var payload = {};
+
+    if (!profile.personal_name_locked) {
+      var lastName = val("last_name");
+      var firstName = val("first_name");
+      var middleName = val("middle_name");
+      if (lastName || firstName || middleName) {
+        payload.last_name = lastName;
+        payload.first_name = firstName;
+        payload.middle_name = middleName;
+      }
+    }
 
     if (!profile.inn_locked) {
       var inn = val("inn").replace(/\D/g, "");
@@ -410,6 +467,7 @@
       if (result.response.ok && result.data && result.data.success) {
         state.profile = result.data.data;
         refreshProfilePanel();
+        PlombirLayout.updateUserDisplay(state.profile);
         PlombirLayout.showAlert(document.getElementById("profile-alert"), "Данные профиля сохранены", "success");
       } else {
         PlombirLayout.showAlert(alertBox, PlombirApi.extractErrorMessage(result.data, "Не удалось сохранить профиль"), "error");
@@ -514,6 +572,14 @@
     });
   }
 
+  function loadLegalDocuments() {
+    return PlombirApi.get("/content/legal_documents").then(function (result) {
+      if (result.response.ok && result.data && result.data.success) {
+        state.legalDocs = result.data.data.value || { documents: {} };
+      }
+    });
+  }
+
   function init(profile) {
     state.profile = profile;
     state.activeTab = resolveTabFromHash();
@@ -526,9 +592,11 @@
     });
     if (!contentRoot) return;
 
-    contentRoot.innerHTML = renderShell(profile);
-    bindProfileEvents(profile);
-    setActiveTab(state.activeTab, false);
+    loadLegalDocuments().finally(function () {
+      contentRoot.innerHTML = renderShell(state.profile);
+      bindProfileEvents(state.profile);
+      setActiveTab(state.activeTab, false);
+    });
 
     window.addEventListener("hashchange", function () {
       setActiveTab(resolveTabFromHash(), false);

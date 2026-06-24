@@ -34,6 +34,8 @@ def _serialize_product(product: Product, *, include_admin: bool = False) -> dict
         "unit_volume": product.unit_volume,
         "net_weight": product.net_weight,
         "pieces_per_box": product.pieces_per_box,
+        "shelf_life": product.shelf_life,
+        "nutrition_facts": product.nutrition_facts,
         "source": product.source.value,
         "created_at": product.created_at.isoformat() if product.created_at else None,
         "updated_at": product.updated_at.isoformat() if product.updated_at else None,
@@ -199,6 +201,8 @@ class ProductsService:
         unit_volume: str | None = None,
         net_weight: str | None = None,
         pieces_per_box: int | None = None,
+        shelf_life: str | None = None,
+        nutrition_facts: str | None = None,
         distributor_ids: list[uuid.UUID] | None = None,
     ) -> dict[str, Any]:
         normalized_article = article.strip()
@@ -233,6 +237,8 @@ class ProductsService:
             unit_volume=(unit_volume or "").strip() or None,
             net_weight=(net_weight or "").strip() or None,
             pieces_per_box=pieces_per_box,
+            shelf_life=(shelf_life or "").strip() or None,
+            nutrition_facts=(nutrition_facts or "").strip() or None,
             source=ProductSource.manual,
             is_active=True,
         )
@@ -275,7 +281,7 @@ class ProductsService:
         text_fields = [
             "name", "description", "image_url", "category", "product_kind", "flavor",
             "composition", "weight_volume", "product_group", "brand", "code",
-            "unit_barcode", "box_barcode", "unit_volume", "net_weight",
+            "unit_barcode", "box_barcode", "unit_volume", "net_weight", "shelf_life", "nutrition_facts",
         ]
         for field in text_fields:
             if field in updates:

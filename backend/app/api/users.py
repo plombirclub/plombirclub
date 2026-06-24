@@ -29,7 +29,6 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 class ProfileUpdateRequest(BaseModel):
-    full_name: str | None = Field(default=None, max_length=255)
     first_name: str | None = Field(default=None, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
     middle_name: str | None = Field(default=None, max_length=100)
@@ -48,6 +47,10 @@ class AssignDistributorRequest(BaseModel):
 class AdminActivatePointsRequest(BaseModel):
     period_month: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
     comment: str | None = Field(default=None, max_length=500)
+
+
+class SendActivationTaskRequest(BaseModel):
+    period_month: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
 
 
 DocumentType = Literal["inn_photo", "knd_1122035_photo"]
@@ -77,14 +80,30 @@ async def update_profile(
 ) -> dict:
     user = auth.user
 
-    if payload.full_name is not None:
-        user.full_name = payload.full_name.strip() or None
-    if payload.first_name is not None:
-        user.first_name = payload.first_name.strip() or None
-    if payload.last_name is not None:
-        user.last_name = payload.last_name.strip() or None
-    if payload.middle_name is not None:
-        user.middle_name = payload.middle_name.strip() or None
+    name_fields_provided = any(
+        value is not None for value in (payload.first_name, payload.last_name, payload.middle_name)
+    )
+    if name_fields_provided:
+        if user.personal_name_locked:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Фамилия, имя и отчество уже сохранены и не могут быть изменены самостоятельно",
+            )
+
+        new_first = payload.first_name.strip() if payload.first_name is not None else None
+        new_last = payload.last_name.strip() if payload.last_name is not None else None
+        new_middle = payload.middle_name.strip() if payload.middle_name is not None else None
+
+        if not any((new_first, new_last, new_middle)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Укажите хотя бы одно из полей: фамилия, имя или отчество",
+            )
+
+        user.first_name = new_first or None
+        user.last_name = new_last or None
+        user.middle_name = new_middle or None
+        user.personal_name_locked = True
 
     if payload.inn is not None:
         if user.inn_locked:
@@ -350,6 +369,40 @@ async def admin_activate_points(
     return {"success": True, "data": result}
 
 
+@router.post("/{user_id}/send-activation-task")
+async def send_activation_task(
+    user_id: uuid.UUID,
+    payload: SendActivationTaskRequest | None = None,
+    auth: AuthContext = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    await _get_user_or_404(db, user_id)
+    service = PointsService(db)
+    try:
+        result = await service.send_activation_task_for_previous_month(
+            user_id=user_id,
+            admin_id=auth.user.id,
+            period_month=payload.period_month if payload else None,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    await write_admin_log(
+        db,
+        admin=auth.user,
+        action="send_activation_task",
+        entity_type="user",
+        entity_id=user_id,
+        old_value=None,
+        new_value=result,
+    )
+    await db.commit()
+
+    return {"success": True, "data": result}
+
+
 @router.put("/{user_id}/deactivate")
 async def deactivate_user(
     user_id: uuid.UUID,
@@ -494,6 +547,7 @@ async def delete_user(
     user.first_name = None
     user.last_name = None
     user.middle_name = None
+    user.personal_name_locked = False
     user.inn = None
     user.inn_document_path = None
     user.inn_locked = False

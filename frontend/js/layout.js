@@ -8,7 +8,8 @@
     { id: "profile", label: "Профиль", href: "/pages/profile.html", icon: "user" },
     { id: "news", label: "Условия акции", href: "/pages/news.html", icon: "news" },
     { id: "materials", label: "Материалы", href: "/pages/materials.html", icon: "materials" },
-    { id: "products", label: "Продукция ЧИСТАЯ ЛИНИЯ", href: "/pages/products.html", icon: "products" },
+    { id: "products", label: "Продукция<br>ЧИСТАЯ&nbsp;ЛИНИЯ", href: "/pages/products.html", icon: "products" },
+    { id: "points", label: "БАЛЛЫ", href: "/pages/points.html", icon: "points" },
     { id: "catalog", label: "Каталог призов", href: "/pages/catalog.html", icon: "catalog" },
     { id: "analytics", label: "Аналитика", href: "/pages/analytics.html", icon: "analytics" },
     { id: "faq", label: "Частые вопросы", href: "/pages/faq.html", icon: "faq" },
@@ -22,6 +23,7 @@
       news: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h9l3 3v13H6V4Zm2 4h8v2H8V8Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z"/></svg>',
       materials: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v4H4V4Zm0 6h10v10H4V10Zm12 0h4v10h-4V10Z"/></svg>',
       products: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16l-1 13H5L4 7Zm2-3h12v2H6V4Z"/></svg>',
+      points: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V6l-8-4Zm0 3.1 4.8 2.4L12 9.9 7.2 7.5 12 5.1Zm-6 6.3V9.4l5 2.5v7.2c-2.9-1.2-5-4.5-5-7.7Zm7 7.7v-7.2l5-2.5v2c0 3.2-2.1 6.5-5 7.7Z"/></svg>',
       catalog: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4V6Zm2 2v8h12V8H6Zm2 2h3v4H8v-4Zm5 0h3v4h-3v-4Z"/></svg>',
       analytics: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16v2H4v-2Zm3-4h2v3H7v-3Zm4-5h2v8h-2V10Zm4-3h2v11h-2V7Z"/></svg>',
       faq: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 15h-2v-2h2v2Zm0-4h-2a3 3 0 1 1 3-3h2a5 5 0 1 0-5 5Z"/></svg>',
@@ -112,12 +114,20 @@
       .replace(/"/g, "&quot;");
   }
 
+  function personalNameParts(profile) {
+    return [profile.last_name, profile.first_name, profile.middle_name].filter(Boolean);
+  }
+
   function userInitials(profile) {
-    var name = profile.full_name || [profile.first_name, profile.last_name].filter(Boolean).join(" ");
-    if (!name) return (profile.email || "U").charAt(0).toUpperCase();
-    var parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
-    return parts[0].charAt(0).toUpperCase();
+    var parts = personalNameParts(profile);
+    if (parts.length >= 2) {
+      return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+    }
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+    var fallback = profile.full_name || profile.email || "U";
+    var tokens = String(fallback).trim().split(/\s+/);
+    if (tokens.length >= 2) return (tokens[0].charAt(0) + tokens[1].charAt(0)).toUpperCase();
+    return tokens[0].charAt(0).toUpperCase();
   }
 
   function renderSidebarUser(profile, mode) {
@@ -140,10 +150,28 @@
   }
 
   function userDisplayName(profile) {
-    if (profile.full_name) return profile.full_name;
-    var parts = [profile.last_name, profile.first_name, profile.middle_name].filter(Boolean);
+    var parts = personalNameParts(profile);
     if (parts.length) return parts.join(" ");
+    if (profile.full_name) return profile.full_name;
     return profile.email || "Участник";
+  }
+
+  function updateUserDisplay(profile) {
+    if (!profile) return;
+    var name = userDisplayName(profile);
+    var initials = userInitials(profile);
+
+    var headerName = document.querySelector(".header-user__name");
+    if (headerName) headerName.textContent = name;
+
+    var sidebarName = document.querySelector(".sidebar__user-name");
+    if (sidebarName) sidebarName.textContent = name;
+
+    var avatar = document.querySelector(".sidebar__user-avatar");
+    if (avatar) avatar.textContent = initials;
+
+    var profileAvatar = document.querySelector(".profile-avatar__circle");
+    if (profileAvatar) profileAvatar.textContent = initials;
   }
 
   function mountLayout(options) {
@@ -178,10 +206,9 @@
     var sidebarHtml =
       '<aside class="sidebar" id="sidebar" aria-label="Меню личного кабинета">' +
         renderSidebarUser(profile, mode) +
-        '<div class="sidebar__brand">' +
-          '<div class="brand-logo brand-logo--sm" aria-hidden="true">CL</div>' +
-          '<div><p class="brand-logo__title">ЧИСТАЯ ЛИНИЯ</p></div>' +
-        "</div>" +
+        '<a class="sidebar__brand" href="/pages/home.html" aria-label="Чистая Линия">' +
+          '<img class="brand-logo-img" src="/images/logo.png" alt="Чистая Линия">' +
+        "</a>" +
         '<nav class="sidebar__nav">' + renderMenuItems(activeId, menuDisabled) + "</nav>" +
         '<div id="sidebar-support">' + renderSupportBlock() + "</div>" +
       "</aside>";
@@ -209,8 +236,8 @@
             '<div class="header__title-wrap">' +
               (pageTitle ? '<h1 class="header__title">' + escapeHtml(pageTitle) + "</h1>" : "") +
             "</div>" +
-            '<a class="header__brand" href="/pages/home.html" aria-label="ЧИСТАЯ ЛИНИЯ">' +
-              '<p class="header__brand-text">ЧИСТАЯ ЛИНИЯ</p>' +
+            '<a class="header__brand" href="/pages/home.html" aria-label="Чистая Линия">' +
+              '<img class="brand-logo-img" src="/images/logo.png" alt="">' +
             "</a>" +
             '<div class="header__right">' + headerRight + "</div>" +
           "</header>" +
@@ -302,6 +329,9 @@
     clearAlert: clearAlert,
     escapeHtml: escapeHtml,
     updateNotificationBadge: updateNotificationBadge,
+    updateUserDisplay: updateUserDisplay,
+    userDisplayName: userDisplayName,
+    userInitials: userInitials,
     MENU_ITEMS: MENU_ITEMS,
   };
 })(window);

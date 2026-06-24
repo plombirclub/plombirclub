@@ -34,6 +34,7 @@ body {
   margin-left: auto;
   text-decoration: none;
   flex-shrink: 0;
+  max-width: 42%;
 }
 
 .header__brand-text {

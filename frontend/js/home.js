@@ -13,7 +13,7 @@
 
     if (!contentRoot) return;
 
-    var name = profile.full_name || profile.email || "участник";
+    var name = PlombirLayout.userDisplayName(profile);
     contentRoot.innerHTML =
       '<div class="welcome-card panel-block">' +
         '<h2 class="panel-block__title">Добро пожаловать, ' + PlombirLayout.escapeHtml(name) + "!</h2>" +

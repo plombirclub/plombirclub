@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import AuthContext, require_admin, require_registration_complete
 from app.core.database import get_db_session
+from app.services.email import EmailService
 from app.services.notifications import NotificationService
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -18,6 +19,11 @@ class NotificationReadRequest(BaseModel):
 
 
 class NotificationTemplateUpdateRequest(BaseModel):
+    template_text: str = Field(min_length=1)
+
+
+class EmailTemplateUpdateRequest(BaseModel):
+    subject: str = Field(min_length=1, max_length=255)
     template_text: str = Field(min_length=1)
 
 
@@ -80,6 +86,39 @@ async def update_notification_template(
         data = await service.update_template(
             admin=auth.user,
             template_id=template_id,
+            template_text=payload.template_text,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"success": True, "data": data}
+
+
+@router.get("/email-templates")
+async def list_email_templates(
+    _: AuthContext = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict[str, Any]:
+    service = EmailService(db)
+    items = await service.list_templates()
+    return {"success": True, "data": {"items": items}}
+
+
+@router.put("/email-templates/{template_id}")
+async def update_email_template(
+    template_id: uuid.UUID,
+    payload: EmailTemplateUpdateRequest,
+    auth: AuthContext = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict[str, Any]:
+    service = EmailService(db)
+    try:
+        data = await service.update_template(
+            admin=auth.user,
+            template_id=template_id,
+            subject=payload.subject,
             template_text=payload.template_text,
         )
     except LookupError as exc:

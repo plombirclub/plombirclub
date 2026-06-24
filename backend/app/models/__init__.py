@@ -20,6 +20,7 @@ from app.models.enums import (
 )
 from app.models.import_error_log import ImportErrorLog
 from app.models.material import Material
+from app.models.email_template import EmailTemplate
 from app.models.notification import Notification
 from app.models.notification_template import NotificationTemplate
 from app.models.parser_config import ParserConfig
@@ -45,6 +46,7 @@ __all__ = [
     "AdminSetting",
     "DeletedUsersArchive",
     "Distributor",
+    "EmailTemplate",
     "ImportErrorLog",
     "ImportType",
     "Material",

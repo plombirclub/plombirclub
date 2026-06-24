@@ -6,6 +6,7 @@
     items: [],
     groups: [],
     groupFilter: "",
+    searchQuery: "",
     page: 1,
     totalPages: 1,
     activeProduct: null,
@@ -28,6 +29,16 @@
       return '<img src="' + escape(imageUrl(product.image_url)) + '" alt="">';
     }
     return '<p class="product-card__placeholder">ЧИСТАЯ ЛИНИЯ</p>';
+  }
+
+  function textBlock(label, value, className) {
+    if (!value) return "";
+    return (
+      '<div class="' + className + '">' +
+        '<p class="' + className + '__title">' + escape(label) + "</p>" +
+        '<p class="' + className + '__text">' + escape(value) + "</p>" +
+      "</div>"
+    );
   }
 
   function groupItems(items) {
@@ -66,6 +77,10 @@
             '<span class="field__label">Группа</span>' +
             '<select class="products-period-select" id="products-group">' + groupOptions + "</select>" +
           "</label>" +
+          '<label class="field products-toolbar__search">' +
+            '<span class="field__label">Поиск по названию</span>' +
+            '<input class="field__input" id="products-search" type="search" placeholder="Введите название товара" value="' + escape(state.searchQuery) + '">' +
+          "</label>" +
         "</div>" +
         '<div id="products-content">' +
           '<p class="content-empty">Загружаем продукцию…</p>' +
@@ -85,7 +100,19 @@
       return;
     }
 
-    var sections = groupItems(state.items);
+    var query = state.searchQuery.trim().toLowerCase();
+    var filteredItems = state.items.filter(function (item) {
+      if (!query) return true;
+      return (item.name || "").toLowerCase().indexOf(query) !== -1;
+    });
+    if (!filteredItems.length) {
+      container.innerHTML = '<p class="content-empty">По вашему запросу товары не найдены.</p>';
+      var emptyPagination = document.getElementById("products-pagination");
+      if (emptyPagination) emptyPagination.innerHTML = "";
+      return;
+    }
+
+    var sections = groupItems(filteredItems);
     var html = sections
       .map(function (section) {
         var cards = section.items
@@ -95,12 +122,8 @@
                 '<div class="product-card__media">' + mediaHtml(product) + "</div>" +
                 '<div class="product-card__body">' +
                   '<h3 class="product-card__name">' + escape(product.name) + "</h3>" +
-                  (product.category
-                    ? '<p class="product-card__meta">Категория: ' + escape(product.category) + "</p>"
-                    : "") +
-                  (product.brand
-                    ? '<p class="product-card__meta">Бренд: ' + escape(product.brand) + "</p>"
-                    : "") +
+                  textBlock("Описание", product.description, "product-card__block") +
+                  textBlock("Количество в коробке", product.pieces_per_box, "product-card__block") +
                   '<div class="product-card__footer">' +
                     '<span class="product-card__link">Подробнее</span>' +
                   "</div>" +
@@ -153,6 +176,8 @@
     if (!container || !state.activeProduct) return;
 
     var product = state.activeProduct;
+    var pagination = document.getElementById("products-pagination");
+    if (pagination) pagination.innerHTML = "";
     var rows =
       detailRow("Описание", product.description) +
       detailRow("Категория", product.category) +
@@ -162,7 +187,8 @@
       detailRow("Штрихкод коробки", product.box_barcode) +
       detailRow("Объем единицы, л", product.unit_volume || product.weight_volume) +
       detailRow("Вес нетто, кг", product.net_weight) +
-      detailRow("Количество штук в коробке", product.pieces_per_box);
+      detailRow("Срок годности", product.shelf_life) +
+      detailRow("Количество в коробке", product.pieces_per_box);
 
     container.innerHTML =
       '<div class="product-detail">' +
@@ -179,9 +205,8 @@
               : "") +
             '<h2 class="product-detail__title">' + escape(product.name) + "</h2>" +
             '<table class="product-detail__table"><tbody>' + rows + "</tbody></table>" +
-            (product.composition
-              ? '<p class="product-detail__desc"><strong>Состав:</strong> ' + escape(product.composition) + "</p>"
-              : "") +
+            textBlock("О товаре", product.composition, "product-detail__block") +
+            textBlock("Пищевая ценность (в 100 г)", product.nutrition_facts, "product-detail__block") +
           "</div>" +
         "</div>" +
       "</div>";
@@ -264,7 +289,7 @@
       query += "&product_group=" + encodeURIComponent(state.groupFilter);
     }
 
-    PlombirApi.get("/products" + query).then(function (result) {
+    PlombirApi.get("/products/" + query).then(function (result) {
       state.loading = false;
       var alertBox = document.getElementById("products-alert");
       PlombirLayout.clearAlert(alertBox);
@@ -296,6 +321,13 @@
       } else {
         renderList();
       }
+    }).catch(function (error) {
+      state.loading = false;
+      PlombirLayout.showAlert(
+        document.getElementById("products-alert"),
+        error && error.message ? error.message : "Не удалось загрузить продукцию",
+        "error"
+      );
     });
   }
 
@@ -310,6 +342,17 @@
     });
   }
 
+  function bindSearchInput() {
+    var input = document.getElementById("products-search");
+    if (!input) return;
+    input.addEventListener("input", function () {
+      state.searchQuery = input.value || "";
+      if (state.view === "list") {
+        renderList();
+      }
+    });
+  }
+
   function init(profile) {
     var root = PlombirLayout.mountLayout({
       mode: "full",
@@ -321,6 +364,7 @@
 
     root.innerHTML = renderShell();
     bindGroupSelect();
+    bindSearchInput();
     loadGroups();
 
     var productId = getProductIdFromUrl();

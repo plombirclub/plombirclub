@@ -104,6 +104,18 @@ function copyStatic() {
   copyFile(path.join(root, "docker-nginx.conf"), path.join(dist, "docker-nginx.conf"));
 }
 
+function copyPdfJs() {
+  var pdfRoot = path.join(root, "node_modules", "pdfjs-dist", "legacy", "build");
+  var pdfMin = path.join(pdfRoot, "pdf.min.js");
+  var workerMin = path.join(pdfRoot, "pdf.worker.min.js");
+  if (!fs.existsSync(pdfMin) || !fs.existsSync(workerMin)) {
+    throw new Error("pdfjs-dist не найден — выполните npm install");
+  }
+  copyFile(pdfMin, path.join(dist, "js", "pdf.min.js"));
+  copyFile(workerMin, path.join(dist, "js", "pdf.worker.min.js"));
+  console.log("js: pdf.min.js, pdf.worker.min.js (pdfjs-dist)");
+}
+
 async function main() {
   if (fs.existsSync(dist)) {
     fs.rmSync(dist, { recursive: true, force: true });
@@ -112,6 +124,7 @@ async function main() {
   await buildCss();
   await buildJs();
   copyPolyfills();
+  copyPdfJs();
   copyStatic();
   console.log("Build complete -> frontend/dist");
 }

@@ -105,6 +105,17 @@
   flex-shrink: 0;
 }
 
+.agreement-link {
+  color: var(--color-badge, #c43b71);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.agreement-link:hover {
+  text-decoration: underline;
+}
+
 .first-login__done {
   text-align: center;
 }

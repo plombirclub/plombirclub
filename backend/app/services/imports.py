@@ -3,11 +3,9 @@ import json
 import logging
 import re
 import secrets
-import smtplib
 import uuid
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from email.message import EmailMessage
 from hashlib import sha256
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -16,7 +14,6 @@ from openpyxl import Workbook, load_workbook
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.security import hash_password
 from app.models.distributor import Distributor
 from app.models.enums import ImportType, PointsLedgerStatus, PointsOperationType, TaskType, UserRole
@@ -25,7 +22,7 @@ from app.models.task import Task
 from app.models.task_distributor import TaskDistributor
 from app.models.user import User
 from app.models.user_task_acceptance import UserTaskAcceptance
-from app.services.notifications import NotificationService
+from app.services.email import EmailService
 from app.services.points import PointsService
 
 logger = logging.getLogger(__name__)
@@ -38,6 +35,10 @@ USER_IMPORT_HEADERS = [
     "Email",
 ]
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+EXISTING_USER_EMAIL_ERROR = (
+    "Email уже зарегистрирован в системе. "
+    "Новый пользователь не создавался, существующий участник не изменялся."
+)
 MSK_TZ = ZoneInfo("Europe/Moscow")
 ZERO = Decimal("0.00")
 DECIMAL_STEP = Decimal("0.01")
@@ -92,6 +93,23 @@ MONTH_NAME_TO_NUMBER = {
     "ноябрь": 11,
     "декабрь": 12,
 }
+SALES_ROLE_LABELS = {"tp": "ТП", "sv": "СВ"}
+SALES_IMPORT_COMMENT_PREFIX = "import_sales_row:"
+
+
+def build_sales_import_comment(
+    payload: dict[str, str],
+    *,
+    role: str,
+    document_date: date,
+    period_month: str,
+) -> str:
+    """Сохраняет значения ячеек Excel без склеивания через запятые."""
+    row = {header: payload.get(header, "") for header in SALES_TEMPLATE_HEADERS}
+    row["__role"] = SALES_ROLE_LABELS.get(role, role)
+    row["__document_date"] = document_date.isoformat()
+    row["__period_month"] = period_month
+    return SALES_IMPORT_COMMENT_PREFIX + json.dumps(row, ensure_ascii=False)
 
 
 def _clean_cell(value: Any) -> str:
@@ -191,55 +209,6 @@ def _consent_deadline(period_month: str) -> datetime:
     return datetime(deadline_year, deadline_month, 10, 23, 59, 59, tzinfo=MSK_TZ)
 
 
-def _build_import_email(email: str, temporary_password: str) -> EmailMessage:
-    message = EmailMessage()
-    message["Subject"] = "ЧИСТАЯ ЛИНИЯ — временный пароль"
-    message["From"] = settings.smtp_from_email or settings.smtp_user
-    message["To"] = email
-    message.set_content(
-        "\n".join(
-            [
-                "Здравствуйте!",
-                "",
-                "Ваш аккаунт на промо-портале «ЧИСТАЯ ЛИНИЯ» создан или обновлен.",
-                f"Логин: {email}",
-                f"Временный пароль: {temporary_password}",
-                "",
-                "После входа сразу смените временный пароль и завершите первый вход.",
-            ]
-        )
-    )
-    return message
-
-
-def _send_temporary_password_email(email: str, temporary_password: str) -> str | None:
-    if not settings.smtp_user or not settings.smtp_password:
-        return "SMTP не настроен: письмо не отправлено"
-
-    message = _build_import_email(email, temporary_password)
-    try:
-        if settings.smtp_use_tls:
-            with smtplib.SMTP_SSL(
-                host=settings.smtp_host,
-                port=settings.smtp_port,
-                timeout=20,
-            ) as smtp:
-                smtp.login(settings.smtp_user, settings.smtp_password)
-                smtp.send_message(message)
-        else:
-            with smtplib.SMTP(
-                host=settings.smtp_host,
-                port=settings.smtp_port,
-                timeout=20,
-            ) as smtp:
-                smtp.login(settings.smtp_user, settings.smtp_password)
-                smtp.send_message(message)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Не удалось отправить email пользователю %s", email)
-        return str(exc)
-    return None
-
-
 class ImportsService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -314,10 +283,10 @@ class ImportsService:
         seen_codes: set[str] = set()
 
         created_count = 0
-        updated_count = 0
         failed_count = 0
         emailed_count = 0
         processed_count = 0
+        row_errors: list[dict[str, Any]] = []
 
         for row_number, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
             row_values = list(row[:5])
@@ -325,14 +294,15 @@ class ImportsService:
                 continue
             processed_count += 1
 
-            participant_code = _clean_cell(row_values[0]).upper()
+            participant_code_raw = _clean_cell(row_values[0])
+            participant_code_key = participant_code_raw.upper()
             distributor_name = _clean_cell(row_values[1])
-            participant_position = _clean_cell(row_values[2]).upper()
+            participant_position = _clean_cell(row_values[2])
             full_name = _clean_cell(row_values[3])
             email = _normalize_email(_clean_cell(row_values[4]))
 
             raw_payload = {
-                "participant_code": participant_code,
+                "participant_code": participant_code_raw,
                 "distributor_name": distributor_name,
                 "participant_position": participant_position,
                 "full_name": full_name,
@@ -340,7 +310,7 @@ class ImportsService:
             }
 
             validation_error: str | None = None
-            if not participant_code:
+            if not participant_code_raw:
                 validation_error = "Не заполнен «Код участника»"
             elif not distributor_name:
                 validation_error = "Не заполнен «Дистрибьютор»"
@@ -354,85 +324,65 @@ class ImportsService:
                 validation_error = "Некорректный Email"
             elif email in seen_emails:
                 validation_error = "Дублирующийся Email в файле импорта"
-            elif participant_code in seen_codes:
+            elif participant_code_key in seen_codes:
                 validation_error = "Дублирующийся код участника в файле импорта"
+            elif email in users_by_email:
+                validation_error = EXISTING_USER_EMAIL_ERROR
 
             distributor = distributors_map.get(_normalize_email(distributor_name))
             if validation_error is None and distributor is None:
                 validation_error = "Указанный дистрибьютор не найден"
 
-            user_by_code = users_by_code.get(participant_code)
+            user_by_code = users_by_code.get(participant_code_key)
             if validation_error is None and user_by_code and _normalize_email(user_by_code.email) != email:
                 validation_error = "Код участника уже привязан к другому пользователю"
 
             if validation_error:
-                failed_count += 1
-                self._log_import_error(
+                self._record_users_import_row_error(
+                    row_errors=row_errors,
                     row_number=row_number,
+                    email=email or None,
                     error_message=validation_error,
                     raw_row_data=raw_payload,
-                    import_type=ImportType.users,
                 )
+                failed_count += 1
                 continue
 
             seen_emails.add(email)
-            seen_codes.add(participant_code)
+            seen_codes.add(participant_code_key)
 
-            user = users_by_email.get(email)
             temporary_password = _temporary_password()
+            user = User(
+                email=email,
+                password_hash=hash_password(temporary_password),
+                role=UserRole.user,
+                full_name=full_name,
+                participant_code=participant_code_raw,
+                participant_position=participant_position,
+                distributor_id=distributor.id if distributor else None,
+                is_active=True,
+                phone_verified=False,
+                agreements_accepted=False,
+                temporary_password_changed=False,
+                is_registration_complete=False,
+            )
+            self.db.add(user)
+            users_by_email[email] = user
+            users_by_code[participant_code_key] = user
+            created_count += 1
 
-            if user is None:
-                user = User(
-                    email=email,
-                    password_hash=hash_password(temporary_password),
-                    role=UserRole.user,
-                    full_name=full_name,
-                    participant_code=participant_code,
-                    participant_position=participant_position,
-                    distributor_id=distributor.id if distributor else None,
-                    is_active=True,
-                    phone_verified=False,
-                    agreements_accepted=False,
-                    temporary_password_changed=False,
-                    is_registration_complete=False,
-                )
-                self.db.add(user)
-                users_by_email[email] = user
-                users_by_code[participant_code] = user
-                created_count += 1
-            else:
-                if user.role == UserRole.admin:
-                    failed_count += 1
-                    self._log_import_error(
-                        row_number=row_number,
-                        error_message="Нельзя обновлять администратора через импорт пользователей",
-                        raw_row_data=raw_payload,
-                        import_type=ImportType.users,
-                    )
-                    continue
-
-                old_code = (user.participant_code or "").strip().upper()
-                if old_code and old_code != participant_code:
-                    users_by_code.pop(old_code, None)
-                users_by_code[participant_code] = user
-
-                user.full_name = full_name
-                user.participant_code = participant_code
-                user.participant_position = participant_position
-                user.distributor_id = distributor.id if distributor else None
-                user.password_hash = hash_password(temporary_password)
-                user.temporary_password_changed = False
-                user.is_registration_complete = False
-                updated_count += 1
-
-            email_error = _send_temporary_password_email(email, temporary_password)
+            email_error = await EmailService(self.db).send_import_welcome(
+                to_email=email,
+                temporary_password=temporary_password,
+            )
             if email_error:
                 failed_count += 1
-                self._log_import_error(
+                self._record_users_import_row_error(
+                    row_errors=row_errors,
                     row_number=row_number,
-                    error_message=f"Пользователь обработан, но письмо не отправлено: {email_error}",
+                    email=email,
+                    error_message=f"Пользователь создан, но письмо не отправлено: {email_error}",
                     raw_row_data=raw_payload,
-                    import_type=ImportType.users,
                 )
             else:
                 emailed_count += 1
@@ -440,10 +390,16 @@ class ImportsService:
         await self.db.commit()
         return {
             "created_count": created_count,
-            "updated_count": updated_count,
+            "updated_count": 0,
             "failed_count": failed_count,
             "emailed_count": emailed_count,
             "processed_count": processed_count,
+            "errors": row_errors,
+            "message": _build_users_import_message(
+                created_count=created_count,
+                failed_count=failed_count,
+                emailed_count=emailed_count,
+            ),
         }
 
     async def import_sales_from_xlsx(
@@ -618,11 +574,15 @@ class ImportsService:
                     admin_id=admin_id,
                     import_file_name=import_file_name,
                     import_row_number=row_number,
-                    create_comment=(
-                        f"Импорт продаж: {client_name}, {client_address}, {product_name}"
-                        f"|кор:{_normalize_decimal(quantity)}|дата:{document_date.isoformat()}"
+                    create_comment=build_sales_import_comment(
+                        payload,
+                        role=role,
+                        document_date=document_date,
+                        period_month=period_month,
                     ),
-                    overwrite_comment=f"Импорт продаж: обновление начисления ({role.upper()})",
+                    overwrite_comment=(
+                        f"Импорт продаж: обновление начисления ({SALES_ROLE_LABELS.get(role, role)})"
+                    ),
                     commit=False,
                 )
                 if operation_result == "created":
@@ -642,16 +602,9 @@ class ImportsService:
             overwritten_count += row_overwritten
             skipped_duplicates_count += row_duplicates
 
-        if activation_notify:
-            notification_items = [
-                {
-                    "user_id": user_id,
-                    "event_type": "points_activation",
-                    "period_month": period,
-                }
-                for user_id, period in sorted(activation_notify, key=lambda item: (str(item[0]), item[1]))
-            ]
-            await NotificationService(self.db).send_batch(items=notification_items, commit=False)
+        # Уведомления о задаче активации отправляются только вручную админом
+        # (кнопка "Отправить задачу на активацию" за прошлый месяц).
+        # На этапе импорта продаж уведомления не создаём.
 
         await self.db.commit()
         return {
@@ -660,7 +613,7 @@ class ImportsService:
             "overwritten_count": overwritten_count,
             "skipped_duplicates_count": skipped_duplicates_count,
             "failed_count": failed_count,
-            "activation_notifications_sent": len(activation_notify),
+            "activation_notifications_sent": 0,
         }
 
     def _resolve_sales_indexes(self, header_row: list[str]) -> dict[str, int]:
@@ -730,6 +683,30 @@ class ImportsService:
             return PointsLedgerStatus.inactive
         return PointsLedgerStatus.pending
 
+    def _record_users_import_row_error(
+        self,
+        *,
+        row_errors: list[dict[str, Any]],
+        row_number: int,
+        email: str | None,
+        error_message: str,
+        raw_row_data: dict[str, Any],
+    ) -> None:
+        self._log_import_error(
+            row_number=row_number,
+            error_message=error_message,
+            raw_row_data=raw_row_data,
+            import_type=ImportType.users,
+        )
+        row_errors.append(
+            {
+                "row_number": row_number,
+                "email": email,
+                "message": error_message,
+                "row": raw_row_data,
+            }
+        )
+
     def _log_import_error(
         self,
         *,
@@ -746,3 +723,14 @@ class ImportsService:
                 raw_row_data=json.dumps(raw_row_data, ensure_ascii=False),
             )
         )
+
+
+def _build_users_import_message(*, created_count: int, failed_count: int, emailed_count: int) -> str:
+    if failed_count == 0:
+        return f"Импорт завершён: создано {created_count}, писем отправлено {emailed_count}."
+    if created_count == 0:
+        return f"Импорт завершён с ошибками: ни одна строка не создана, ошибок {failed_count}."
+    return (
+        f"Импорт завершён частично: создано {created_count}, ошибок {failed_count}, "
+        f"писем отправлено {emailed_count}."
+    )

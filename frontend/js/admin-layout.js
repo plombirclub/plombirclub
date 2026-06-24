@@ -6,6 +6,7 @@
 
   var MENU_ITEMS = [
     { id: "users", label: "Пользователи", href: "/admin/users.html" },
+    { id: "distributors", label: "Дистрибьюторы", href: "/admin/distributors.html" },
     { id: "import", label: "Импорт Excel", href: "/admin/import.html" },
     { id: "points", label: "Баллы", href: "/admin/points.html" },
     { id: "orders", label: "Заявки", href: "/admin/orders.html" },
@@ -48,7 +49,7 @@
       '<div class="admin-shell">' +
         '<aside class="admin-sidebar" id="admin-sidebar">' +
           '<div class="admin-sidebar__brand">' +
-            '<p class="admin-sidebar__title">ЧИСТАЯ ЛИНИЯ</p>' +
+            '<img class="brand-logo-img" src="/images/logo.png" alt="Чистая Линия">' +
             '<p class="admin-sidebar__subtitle">Админ-панель</p>' +
           "</div>" +
           '<nav class="admin-menu" aria-label="Меню админки">' + renderMenu(activeId) + "</nav>" +

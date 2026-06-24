@@ -1,8 +1,9 @@
 import io
+import json
 import re
 import uuid
 from collections import defaultdict
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from openpyxl import Workbook
@@ -15,10 +16,14 @@ from app.models.points_ledger import PointsLedger
 from app.models.points_operations_log import PointsOperationsLog
 from app.models.request import Request
 from app.models.user import User
+from app.services.imports import SALES_IMPORT_COMMENT_PREFIX, SALES_ROLE_LABELS
 from app.services.points import PointsService
 
 IMPORT_COMMENT_RE = re.compile(
     r"^Импорт продаж: (.+?), (.+?), (.+?)(?:\|кор:([\d.]+))?(?:\|дата:([\d-]+))?$"
+)
+IMPORT_COMMENT_PIPE_RE = re.compile(
+    r"^Импорт продаж\|(.+?)\|(.+?)\|(.+?)\|кор:([\d.]+)\|дата:([\d-]+)$"
 )
 IMPORT_SOURCE_RE = re.compile(r"^import_sales:[^:]+:(tp|sv)$")
 
@@ -27,43 +32,121 @@ def _normalize_decimal(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"))
 
 
-def _parse_import_role(source: str) -> str | None:
+def _parse_import_role(source: str, comment_role: str | None = None) -> str | None:
+    if comment_role:
+        return comment_role
     match = IMPORT_SOURCE_RE.match(source)
-    return match.group(1).upper() if match else None
+    if not match:
+        return None
+    return SALES_ROLE_LABELS.get(match.group(1).lower(), match.group(1).upper())
+
+
+def _parse_boxes_count(raw: Any) -> float | None:
+    if raw is None:
+        return None
+    text = str(raw).strip().replace(" ", "").replace(",", ".")
+    if not text:
+        return None
+    try:
+        return float(Decimal(text))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _parse_legacy_import_comment(comment: str) -> dict[str, Any] | None:
+    prefix = "Импорт продаж: "
+    if not comment.startswith(prefix):
+        return None
+
+    body = comment[len(prefix) :]
+    boxes_count: float | None = None
+    document_date: str | None = None
+    suffix_match = re.search(r"\|кор:([\d.]+)\|дата:([\d-]+)$", body)
+    if suffix_match:
+        boxes_count = _parse_boxes_count(suffix_match.group(1))
+        document_date = suffix_match.group(2)
+        body = body[: suffix_match.start()]
+
+    first_comma = body.find(", ")
+    last_comma = body.rfind(", ")
+    if first_comma < 0 or last_comma <= first_comma:
+        return None
+
+    return {
+        "client_name": body[:first_comma].strip() or None,
+        "client_address": body[first_comma + 2 : last_comma].strip() or None,
+        "product_name": body[last_comma + 2 :].strip() or None,
+        "boxes_count": boxes_count,
+        "boxes_count_label": suffix_match.group(1) if suffix_match else None,
+        "document_date": document_date,
+        "document_date_label": None,
+        "role": None,
+    }
 
 
 def _parse_import_comment(comment: str | None) -> dict[str, Any]:
-    if not comment:
-        return {
-            "client_name": None,
-            "client_address": None,
-            "product_name": None,
-            "boxes_count": None,
-            "document_date": None,
-        }
-    match = IMPORT_COMMENT_RE.match(comment.strip())
-    if not match:
-        return {
-            "client_name": None,
-            "client_address": None,
-            "product_name": comment,
-            "boxes_count": None,
-            "document_date": None,
-        }
-    boxes_raw = match.group(4)
-    boxes_count: float | None = None
-    if boxes_raw is not None:
-        try:
-            boxes_count = float(Decimal(boxes_raw))
-        except Exception:
-            boxes_count = None
-    return {
-        "client_name": match.group(1).strip() or None,
-        "client_address": match.group(2).strip() or None,
-        "product_name": match.group(3).strip() or None,
-        "boxes_count": boxes_count,
-        "document_date": match.group(5) or None,
+    empty = {
+        "client_name": None,
+        "client_address": None,
+        "product_name": None,
+        "boxes_count": None,
+        "boxes_count_label": None,
+        "document_date": None,
+        "document_date_label": None,
+        "role": None,
     }
+    if not comment:
+        return empty
+
+    text = comment.strip()
+    if text.startswith(SALES_IMPORT_COMMENT_PREFIX):
+        try:
+            data = json.loads(text[len(SALES_IMPORT_COMMENT_PREFIX) :])
+        except json.JSONDecodeError:
+            return {**empty, "product_name": text}
+        boxes_label = data.get("Кол-во кор")
+        return {
+            "client_name": data.get("Клиент") or None,
+            "client_address": data.get("Адрес") or None,
+            "product_name": data.get("Товар") or None,
+            "boxes_count": _parse_boxes_count(boxes_label),
+            "boxes_count_label": boxes_label or None,
+            "document_date": data.get("__document_date") or None,
+            "document_date_label": data.get("Дата") or None,
+            "role": data.get("__role") or None,
+        }
+
+    pipe_match = IMPORT_COMMENT_PIPE_RE.match(text)
+    if pipe_match:
+        return {
+            "client_name": pipe_match.group(1).strip() or None,
+            "client_address": pipe_match.group(2).strip() or None,
+            "product_name": pipe_match.group(3).strip() or None,
+            "boxes_count": _parse_boxes_count(pipe_match.group(4)),
+            "boxes_count_label": pipe_match.group(4),
+            "document_date": pipe_match.group(5) or None,
+            "document_date_label": None,
+            "role": None,
+        }
+
+    legacy = _parse_legacy_import_comment(text)
+    if legacy is not None:
+        return legacy
+
+    match = IMPORT_COMMENT_RE.match(text)
+    if match:
+        return {
+            "client_name": match.group(1).strip() or None,
+            "client_address": match.group(2).strip() or None,
+            "product_name": match.group(3).strip() or None,
+            "boxes_count": _parse_boxes_count(match.group(4)),
+            "boxes_count_label": match.group(4),
+            "document_date": match.group(5) or None,
+            "document_date_label": None,
+            "role": None,
+        }
+
+    return {**empty, "product_name": text}
 
 
 def _serialize_import_row(
@@ -79,12 +162,14 @@ def _serialize_import_row(
         "period_month": ledger.period_month,
         "amount": float(_normalize_decimal(ledger.amount)),
         "boxes_count": parsed["boxes_count"],
+        "boxes_count_label": parsed.get("boxes_count_label"),
         "status": ledger.status.value,
-        "role": _parse_import_role(ledger.source),
+        "role": _parse_import_role(ledger.source, parsed.get("role")),
         "client_name": parsed["client_name"],
         "client_address": parsed["client_address"],
         "product_name": parsed["product_name"],
         "document_date": row_date,
+        "document_date_label": parsed.get("document_date_label"),
         "created_at": ledger.created_at.isoformat() if ledger.created_at else None,
     }
 
@@ -264,12 +349,12 @@ class AnalyticsService:
             sheet.append(
                 [
                     row["period_month"],
-                    row["document_date"],
+                    row.get("document_date_label") or row["document_date"],
                     row["role"],
                     row["client_name"],
                     row["client_address"],
                     row["product_name"],
-                    row["boxes_count"],
+                    row.get("boxes_count_label") if row.get("boxes_count_label") is not None else row["boxes_count"],
                     row["amount"],
                     row["status"],
                 ]

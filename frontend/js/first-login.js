@@ -202,22 +202,28 @@
     });
   }
 
+  function agreementLink(docKey) {
+    return (
+      ' <a class="agreement-link" href="/pages/agreement.html?doc=' + docKey + '" target="_blank" rel="noopener noreferrer">Прочитать</a>'
+    );
+  }
+
   function renderAgreementsStep(panel) {
     panel.innerHTML =
       '<h2 class="panel-block__title">Согласия</h2>' +
-      '<p class="panel-block__text">Для участия в программе необходимо принять все согласия.</p>' +
+      '<p class="panel-block__text">Для участия в программе необходимо принять все согласия. Перед этим можно открыть и прочитать каждый документ.</p>' +
       '<form id="agreements-form" class="form-grid">' +
         '<label class="checkbox-field">' +
           '<input type="checkbox" name="personal_data_accepted" required>' +
-          '<span>Согласие на обработку персональных данных (ФЗ-152)</span>' +
+          '<span>Согласие на обработку персональных данных (ФЗ-152)' + agreementLink("personal_data") + "</span>" +
         "</label>" +
         '<label class="checkbox-field">' +
           '<input type="checkbox" name="program_rules_accepted" required>' +
-          '<span>Согласие с правилами программы</span>' +
+          '<span>Пользовательское соглашение' + agreementLink("program_rules") + "</span>" +
         "</label>" +
         '<label class="checkbox-field">' +
           '<input type="checkbox" name="email_notifications_accepted" required>' +
-          '<span>Согласие на получение email-уведомлений</span>' +
+          '<span>Согласие на получение email-уведомлений' + agreementLink("email_notifications") + "</span>" +
         "</label>" +
         '<div class="form-actions">' +
           '<button type="submit" class="btn btn--primary">Принять и продолжить</button>' +

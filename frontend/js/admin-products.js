@@ -2,7 +2,36 @@
   "use strict";
 
   var L = PlombirAdminLayout;
-  var state = { items: [], distributors: [], parserFields: [], page: 1, totalPages: 1 };
+  var state = {
+    items: [],
+    distributors: [],
+    parserFields: [],
+    page: 1,
+    totalPages: 1,
+    selectedDistributorId: "",
+  };
+  var parserFieldLabels = {
+    article: "Артикул",
+    name: "Название",
+    description: "Описание",
+    image_url: "Изображение",
+    category: "Категория",
+    product_kind: "Вид",
+    flavor: "Вкус",
+    composition: "О товаре / состав",
+    weight_volume: "Вес / объём",
+    sort_order: "Порядок отображения",
+    product_group: "Группа",
+    brand: "Бренд",
+    code: "Код",
+    unit_barcode: "Штрихкод единицы",
+    box_barcode: "Штрихкод коробки",
+    unit_volume: "Объём единицы",
+    net_weight: "Вес нетто",
+    pieces_per_box: "Штук в коробке",
+    shelf_life: "Срок годности",
+    nutrition_facts: "Пищевая ценность (в 100 г)",
+  };
 
   function loadDistributors() {
     return PlombirApi.get("/distributors/").then(function (result) {
@@ -34,10 +63,10 @@
       '<div id="page-alert"></div>' +
       '<div class="admin-card">' +
         '<h2 class="admin-import-block__title">Парсер omoloko.ru</h2>' +
-        '<p class="admin-modal__meta">Ручной запуск обновления каталога. Ручные правки защищены полем manual_overrides.</p>' +
+        '<p class="admin-modal__meta">Ручной запуск обновления каталога. Снимите галочки у ненужных полей, включите «Обновлять существующие товары» — и парсер очистит эти поля в уже загруженных товарах.</p>' +
         '<div class="admin-checklist" id="parser-fields">' +
           state.parserFields.map(function (field) {
-            return '<label><input type="checkbox" value="' + field + '" checked> ' + L.escapeHtml(field) + "</label>";
+            return '<label><input type="checkbox" value="' + field + '" checked> ' + L.escapeHtml(parserFieldLabels[field] || field) + "</label>";
           }).join("") +
         "</div>" +
         '<label class="checkbox-inline"><input type="checkbox" id="parser-update-existing"><span>Обновлять существующие товары</span></label>' +
@@ -45,13 +74,30 @@
         '<div class="admin-import-result" id="parser-result" hidden></div>' +
       "</div>" +
       '<div class="admin-card" style="margin-top:1rem">' +
-        '<div class="admin-toolbar"><button type="button" class="btn btn--primary btn--sm" id="product-create">Добавить товар</button></div>' +
+        '<div class="admin-toolbar">' +
+          '<button type="button" class="btn btn--primary btn--sm" id="product-create">Добавить товар</button>' +
+          '<label class="field" style="min-width:18rem; margin-left:auto;">' +
+            '<span class="field__label">Проверка по дистрибьютору</span>' +
+            '<select class="field__input" id="products-distributor-filter">' +
+              '<option value="">Выберите дистрибьютора…</option>' +
+              state.distributors.map(function (d) {
+                var selected = d.id === state.selectedDistributorId ? " selected" : "";
+                return '<option value="' + d.id + '"' + selected + ">" + L.escapeHtml(d.name) + "</option>";
+              }).join("") +
+            "</select>" +
+          "</label>" +
+        "</div>" +
+        '<p class="admin-modal__meta">Если галочка стоит — товар виден участникам выбранного дистрибьютора. Если снять галочку — товар скрывается у него.</p>' +
         '<div id="products-table"><p class="admin-empty">Загрузка…</p></div>' +
         '<div class="admin-pagination" id="products-pagination" hidden></div>' +
       "</div>";
 
     document.getElementById("parser-run").addEventListener("click", runParser);
     document.getElementById("product-create").addEventListener("click", function () { openModal(null); });
+    document.getElementById("products-distributor-filter").addEventListener("change", function (event) {
+      state.selectedDistributorId = event.target.value || "";
+      refreshTable();
+    });
     refreshTable();
   }
 
@@ -61,6 +107,26 @@
     return Array.prototype.slice.call(root.querySelectorAll("input:checked")).map(function (el) {
       return el.value;
     });
+  }
+
+  function formatParserResult(data) {
+    if (!data) return "Парсер завершён без данных.";
+    var lines = [
+      "Источник: " + (data.source_url || "—"),
+      "Найдено на сайте: " + (data.parsed_count || 0),
+      "Новых добавлено: " + (data.created_count || 0),
+      "Обновлено: " + (data.updated_count || 0),
+      "Уже были в базе: " + (data.skipped_existing_count || 0),
+    ];
+    if ((data.created_count || 0) === 0 && (data.updated_count || 0) === 0 && (data.skipped_existing_count || 0) > 0) {
+      lines.push("");
+      lines.push("Товары уже есть в базе. Чтобы обновить поля с omoloko.ru, включите «Обновлять существующие товары» и запустите снова.");
+    }
+    if ((data.created_count || 0) > 0 || (data.updated_count || 0) > 0) {
+      lines.push("");
+      lines.push("Список ниже обновлён.");
+    }
+    return lines.join("\n");
   }
 
   function runParser() {
@@ -78,30 +144,44 @@
         return;
       }
       resultBox.className = "admin-import-result";
-      resultBox.textContent = JSON.stringify(result.data.data, null, 2);
+      resultBox.textContent = formatParserResult(result.data.data);
+      state.page = 1;
       refreshTable();
+    }).catch(function (err) {
+      resultBox.className = "admin-import-result admin-import-result--error";
+      resultBox.textContent = err && err.message ? err.message : "Ошибка парсера";
     });
   }
 
   function refreshTable() {
+    var host = document.getElementById("products-table");
+    if (host) {
+      host.innerHTML = '<p class="admin-empty">Загрузка…</p>';
+    }
     loadProducts().then(function () {
-      var host = document.getElementById("products-table");
+      if (!host) return;
       if (!state.items.length) {
-        host.innerHTML = '<p class="admin-empty">Товары не найдены</p>';
+        host.innerHTML = '<p class="admin-empty">Товары не найдены. Запустите парсер или добавьте товар вручную.</p>';
       } else {
+        var hasDistributor = !!state.selectedDistributorId;
         host.innerHTML =
+          '<p class="admin-modal__meta">Всего в базе: ' + state.items.length + " на этой странице (стр. " + state.page + " из " + state.totalPages + ")</p>" +
           '<div class="admin-table-wrap"><table class="admin-table">' +
-            "<thead><tr><th>Артикул</th><th>Название</th><th>Группа</th><th>Источник</th><th>Статус</th></tr></thead><tbody>" +
+            "<thead><tr><th>Артикул</th><th>Название</th><th>Группа</th><th>Источник</th><th>Виден у дистрибьютора</th><th>Статус</th></tr></thead><tbody>" +
             state.items.map(function (item) {
               var status = item.is_active
                 ? '<span class="admin-badge admin-badge--ok">Активен</span>'
                 : '<span class="admin-badge admin-badge--muted">Скрыт</span>';
+              var checked = hasDistributor && isVisibleForDistributor(item, state.selectedDistributorId) ? " checked" : "";
+              var disabled = hasDistributor ? "" : " disabled";
               return (
                 "<tr data-product-id=\"" + item.id + "\">" +
                   "<td>" + L.escapeHtml(item.article) + "</td>" +
                   "<td>" + L.escapeHtml(item.name) + "</td>" +
                   "<td>" + L.escapeHtml(item.product_group || "—") + "</td>" +
                   "<td>" + L.escapeHtml(item.source) + "</td>" +
+                  "<td><label><input type=\"checkbox\" class=\"product-dist-toggle\" data-product-id=\"" + item.id + "\"" + checked + disabled + "> " +
+                    (hasDistributor ? "Да" : "Выберите дистрибьютора") + "</label></td>" +
                   "<td>" + status + "</td>" +
                 "</tr>"
               );
@@ -112,8 +192,21 @@
             openModal(row.getAttribute("data-product-id"));
           });
         });
+        host.querySelectorAll(".product-dist-toggle").forEach(function (input) {
+          input.addEventListener("click", function (event) {
+            event.stopPropagation();
+          });
+          input.addEventListener("change", function (event) {
+            setDistributorVisibility(event.target.getAttribute("data-product-id"), !!event.target.checked);
+          });
+        });
       }
       renderPagination();
+    }).catch(function (err) {
+      if (!host) return;
+      host.innerHTML = '<p class="admin-empty admin-import-result--error">' +
+        L.escapeHtml(err && err.message ? err.message : "Не удалось загрузить товары") +
+        "</p>";
     });
   }
 
@@ -151,6 +244,55 @@
     return Array.prototype.slice.call(root.querySelectorAll("input:checked")).map(function (el) { return el.value; });
   }
 
+  function isVisibleForDistributor(item, distributorId) {
+    if (!distributorId) return false;
+    var ids = item.distributor_ids || [];
+    if (!ids.length) return true;
+    return ids.indexOf(distributorId) !== -1;
+  }
+
+  function allDistributorIdsExcept(distributorId) {
+    return state.distributors.map(function (d) { return d.id; }).filter(function (id) {
+      return id !== distributorId;
+    });
+  }
+
+  function nextDistributorIds(item, distributorId, shouldBeVisible) {
+    var current = (item.distributor_ids || []).slice();
+    if (!current.length) {
+      if (shouldBeVisible) return [];
+      return allDistributorIdsExcept(distributorId);
+    }
+    if (shouldBeVisible) {
+      if (current.indexOf(distributorId) !== -1) return current;
+      current.push(distributorId);
+      if (current.length >= state.distributors.length) return [];
+      return current;
+    }
+    var next = current.filter(function (id) { return id !== distributorId; });
+    if (!next.length) return allDistributorIdsExcept(distributorId);
+    return next;
+  }
+
+  function setDistributorVisibility(productId, shouldBeVisible) {
+    if (!state.selectedDistributorId) return;
+    var item = state.items.find(function (it) { return it.id === productId; });
+    if (!item) return;
+    var distributorIds = nextDistributorIds(item, state.selectedDistributorId, shouldBeVisible);
+    PlombirApi.put("/products/" + productId + "/distributors", { distributor_ids: distributorIds }).then(function (result) {
+      if (!result.response.ok || !result.data || !result.data.success) {
+        L.showToast(document.getElementById("page-alert"), PlombirApi.extractErrorMessage(result.data, "Не удалось сохранить видимость"), "error");
+        refreshTable();
+        return;
+      }
+      item.distributor_ids = (result.data.data && result.data.data.distributor_ids) || distributorIds;
+      refreshTable();
+    }).catch(function (err) {
+      L.showToast(document.getElementById("page-alert"), err && err.message ? err.message : "Не удалось сохранить видимость", "error");
+      refreshTable();
+    });
+  }
+
   function openModal(productId) {
     var product = productId ? state.items.find(function (p) { return p.id === productId; }) : null;
     var modal = document.getElementById("product-modal");
@@ -167,6 +309,8 @@
           field("Бренд", "product-brand", product ? (product.brand || "") : "") +
           field("URL изображения", "product-image", product ? (product.image_url || "") : "") +
           field("Описание", "product-description", product ? (product.description || "") : "", false, true) +
+          field("Срок годности", "product-shelf-life", product ? (product.shelf_life || "") : "") +
+          field("Пищевая ценность (в 100 г)", "product-nutrition-facts", product ? (product.nutrition_facts || "") : "", false, true) +
           '<div class="field" style="grid-column:1/-1"><span class="field__label">Дистрибьюторы (пусто = всем)</span>' +
             distributorChecklist(product ? product.distributor_ids : [], "product-distributors") + "</div>" +
         "</div>" +
@@ -188,6 +332,8 @@
         brand: document.getElementById("product-brand").value.trim() || null,
         image_url: document.getElementById("product-image").value.trim() || null,
         description: document.getElementById("product-description").value.trim() || null,
+        shelf_life: document.getElementById("product-shelf-life").value.trim() || null,
+        nutrition_facts: document.getElementById("product-nutrition-facts").value.trim() || null,
         distributor_ids: getCheckedIds("product-distributors"),
       };
       var request = product

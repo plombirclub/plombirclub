@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     verify_code_max_attempts: int = 5
     verification_code_ttl_seconds: int = 5 * 60
 
-    smtp_host: str = "smtp.yandex.ru"
+    smtp_host: str = "smtp.mail.ru"
     smtp_port: int = 465
     smtp_user: str = ""
     smtp_password: str = ""

@@ -23,6 +23,7 @@ from app.models.task_distributor import TaskDistributor
 from app.models.user import User
 from app.models.user_actions_log import UserActionsLog
 from app.models.user_task_acceptance import UserTaskAcceptance
+from app.services.notifications import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,13 @@ def _current_period_month() -> str:
 def _validate_period_month(period_month: str) -> str:
     datetime.strptime(period_month, "%Y-%m")
     return period_month
+
+
+def _previous_period_month() -> str:
+    now = now_msk()
+    if now.month == 1:
+        return f"{now.year - 1}-12"
+    return f"{now.year:04d}-{now.month - 1:02d}"
 
 
 class PointsService:
@@ -89,6 +97,182 @@ class PointsService:
             "inactive": float(totals[PointsLedgerStatus.inactive]),
             "redeemed": float(totals[PointsLedgerStatus.redeemed]),
             "total": float(_normalize_decimal(sum(totals.values(), Decimal("0.00")))),
+        }
+
+    async def get_overview(self, *, user_id: uuid.UUID) -> dict[str, Any]:
+        balance = await self.get_balance(user_id=user_id)
+
+        status_rows = [
+            {
+                "status": "accrued",
+                "status_label": "НАЧИСЛЕННО",
+                "amount": balance["total"],
+                "comment": "количество заработанных баллов",
+            },
+            {
+                "status": "active",
+                "status_label": "АКТИВИРОВАНО",
+                "amount": balance["available"],
+                "comment": "эти баллы можно тратить - создайте заявку на обмен в разделе Каталог призов",
+            },
+            {
+                "status": "pending_redemption",
+                "status_label": "ЗАРЕЗЕРВИРОВАНО",
+                "amount": balance["pending_redemption"],
+                "comment": "сейчас в заявках на обмен, заявки утверждаются в течении 5 рабочих дней",
+            },
+            {
+                "status": "pending",
+                "status_label": "ОЖИДАЮТ АКТИВАЦИИ",
+                "amount": balance["pending_activation"],
+                "comment": "баллы необходимо активировать с 1-е по 15-е число каждого месяца",
+            },
+            {
+                "status": "redeemed",
+                "status_label": "ПОГАШЕНО",
+                "amount": balance["redeemed"],
+                "comment": "списанные баллы по утверждённым заявкам на обмен",
+            },
+        ]
+
+        pending_by_period = (
+            await self.db.execute(
+                select(
+                    PointsLedger.period_month,
+                    func.coalesce(func.sum(PointsLedger.amount), 0).label("pending_amount"),
+                    func.count(PointsLedger.id).label("pending_records"),
+                )
+                .where(
+                    PointsLedger.user_id == user_id,
+                    PointsLedger.status == PointsLedgerStatus.pending,
+                )
+                .group_by(PointsLedger.period_month)
+                .order_by(PointsLedger.period_month.desc().nullslast())
+            )
+        ).all()
+
+        activation_items: list[dict[str, Any]] = []
+        for period_month, pending_amount, pending_records in pending_by_period:
+            deadline_at: str | None = None
+            notification_at: str | None = None
+            if period_month:
+                notify_dt = await self._get_activation_notification_at(
+                    user_id=user_id,
+                    period_month=period_month,
+                )
+                # Задача в ЛК появляется только после ручной отправки админом.
+                if notify_dt is None:
+                    continue
+                deadline = compute_activation_deadline(period_month, notify_dt)
+                deadline_at = deadline.isoformat()
+                notification_at = notify_dt.isoformat()
+
+            activation_items.append(
+                {
+                    "period_month": period_month,
+                    "amount": float(_normalize_decimal(pending_amount)),
+                    "records_count": int(pending_records),
+                    "deadline_at": deadline_at,
+                    "notification_at": notification_at,
+                }
+            )
+
+        activation_task: dict[str, Any] | None = None
+        if activation_items:
+            with_deadline = [item for item in activation_items if item["deadline_at"]]
+            if with_deadline:
+                activation_task = min(with_deadline, key=lambda item: item["deadline_at"])
+            else:
+                activation_task = activation_items[0]
+
+        return {
+            "status_rows": status_rows,
+            "activation_task": activation_task,
+            "activation_items": activation_items,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+
+    async def send_activation_task_for_previous_month(
+        self,
+        *,
+        user_id: uuid.UUID,
+        admin_id: uuid.UUID | None = None,
+        period_month: str | None = None,
+    ) -> dict[str, Any]:
+        target_period = _validate_period_month(period_month) if period_month else _previous_period_month()
+        expected_period = _previous_period_month()
+        if target_period != expected_period:
+            raise ValueError(
+                f"Отправка задачи доступна только за предыдущий месяц ({expected_period})"
+            )
+
+        user = await self.db.scalar(select(User).where(User.id == user_id).limit(1))
+        if user is None:
+            raise LookupError("Пользователь не найден")
+        if user.role.value != "user":
+            raise ValueError("Задача активации отправляется только участникам")
+
+        pending_amount = await self.db.scalar(
+            select(func.coalesce(func.sum(PointsLedger.amount), 0))
+            .where(
+                PointsLedger.user_id == user_id,
+                PointsLedger.status == PointsLedgerStatus.pending,
+                PointsLedger.period_month == target_period,
+            )
+        )
+        pending_records = await self.db.scalar(
+            select(func.count(PointsLedger.id))
+            .where(
+                PointsLedger.user_id == user_id,
+                PointsLedger.status == PointsLedgerStatus.pending,
+                PointsLedger.period_month == target_period,
+            )
+        )
+        pending_amount = _normalize_decimal(pending_amount or Decimal("0.00"))
+        pending_records = int(pending_records or 0)
+        if pending_records == 0:
+            raise ValueError("За предыдущий месяц нет pending-баллов для отправки задачи")
+
+        existing_notification_at = await self._get_activation_notification_at(
+            user_id=user_id,
+            period_month=target_period,
+        )
+        if existing_notification_at is not None:
+            deadline = compute_activation_deadline(target_period, existing_notification_at)
+            return {
+                "already_sent": True,
+                "user_id": str(user_id),
+                "period_month": target_period,
+                "pending_amount": float(pending_amount),
+                "pending_records": pending_records,
+                "notification_sent_at": existing_notification_at.isoformat(),
+                "activation_deadline": deadline.isoformat(),
+                "admin_id": str(admin_id) if admin_id else None,
+            }
+
+        notification = await NotificationService(self.db).send(
+            user_id=user_id,
+            event_type="points_activation",
+            commit=False,
+            period_month=target_period,
+        )
+        if notification is None:
+            raise LookupError("Шаблон уведомления points_activation не найден")
+
+        await self.db.flush()
+        sent_at = notification.created_at or datetime.now(UTC)
+        deadline = compute_activation_deadline(target_period, sent_at)
+        await self.db.commit()
+
+        return {
+            "already_sent": False,
+            "user_id": str(user_id),
+            "period_month": target_period,
+            "pending_amount": float(pending_amount),
+            "pending_records": pending_records,
+            "notification_sent_at": sent_at.isoformat(),
+            "activation_deadline": deadline.isoformat(),
+            "admin_id": str(admin_id) if admin_id else None,
         }
 
     async def get_history(
@@ -675,13 +859,13 @@ class PointsService:
             "checked_at": now.isoformat(),
         }
 
-    async def _resolve_activation_notification_at(
+    async def _get_activation_notification_at(
         self,
         *,
         user_id: uuid.UUID,
         period_month: str,
-    ) -> datetime:
-        notified_at = await self.db.scalar(
+    ) -> datetime | None:
+        return await self.db.scalar(
             select(func.min(Notification.created_at))
             .join(NotificationTemplate, Notification.template_id == NotificationTemplate.id)
             .where(
@@ -689,6 +873,17 @@ class PointsService:
                 NotificationTemplate.event_type == "points_activation",
                 Notification.message.contains(period_month),
             )
+        )
+
+    async def _resolve_activation_notification_at(
+        self,
+        *,
+        user_id: uuid.UUID,
+        period_month: str,
+    ) -> datetime:
+        notified_at = await self._get_activation_notification_at(
+            user_id=user_id,
+            period_month=period_month,
         )
         if notified_at is not None:
             return notified_at
@@ -805,8 +1000,32 @@ class PointsService:
             )
         ).all()
 
-        return {
-            "items": [
+        notification_map: dict[uuid.UUID, datetime] = {}
+        if target_period and rows:
+            user_ids = [user.id for user, _, _ in rows]
+            sent_rows = (
+                await self.db.execute(
+                    select(Notification.user_id, func.min(Notification.created_at))
+                    .join(NotificationTemplate, Notification.template_id == NotificationTemplate.id)
+                    .where(
+                        Notification.user_id.in_(user_ids),
+                        NotificationTemplate.event_type == "points_activation",
+                        Notification.message.contains(target_period),
+                    )
+                    .group_by(Notification.user_id)
+                )
+            ).all()
+            notification_map = {user_id: sent_at for user_id, sent_at in sent_rows}
+
+        items = []
+        for user, pending_amount, pending_records in rows:
+            sent_at = notification_map.get(user.id)
+            deadline = (
+                compute_activation_deadline(target_period, sent_at).isoformat()
+                if target_period and sent_at
+                else None
+            )
+            items.append(
                 {
                     "user_id": str(user.id),
                     "email": user.email,
@@ -815,9 +1034,14 @@ class PointsService:
                     "distributor_name": user.distributor.name if user.distributor else None,
                     "pending_amount": float(_normalize_decimal(pending_amount)),
                     "pending_records": int(pending_records),
+                    "activation_task_sent": sent_at is not None,
+                    "activation_task_sent_at": sent_at.isoformat() if sent_at else None,
+                    "activation_deadline": deadline,
                 }
-                for user, pending_amount, pending_records in rows
-            ],
+            )
+
+        return {
+            "items": items,
             "pagination": {
                 "total_count": total_count,
                 "total_pages": total_pages,

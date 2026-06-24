@@ -43,6 +43,7 @@ def serialize_user_profile(user: User) -> dict[str, Any]:
         "first_name": user.first_name,
         "last_name": user.last_name,
         "middle_name": user.middle_name,
+        "personal_name_locked": user.personal_name_locked,
         "phone": user.phone,
         "inn": user.inn,
         "inn_document_path": user.inn_document_path,
@@ -64,6 +65,9 @@ def serialize_user_profile(user: User) -> dict[str, Any]:
         "distributor_name": distributor.name if distributor else None,
         "phone_verified": user.phone_verified,
         "agreements_accepted": user.agreements_accepted,
+        "agreements_accepted_at": (
+            user.agreements_accepted_at.isoformat() if user.agreements_accepted_at else None
+        ),
         "temporary_password_changed": user.temporary_password_changed,
         "is_registration_complete": user.is_registration_complete,
         "bank_account": user.bank_account,

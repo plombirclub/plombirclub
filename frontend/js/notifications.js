@@ -30,6 +30,9 @@
     if (item.event_type === "task_published") {
       return "/pages/news.html";
     }
+    if (item.event_type === "points_activation") {
+      return "/pages/points.html";
+    }
     if (
       item.event_type === "request_created" ||
       item.event_type === "request_confirmed" ||

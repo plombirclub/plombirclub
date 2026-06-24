@@ -39,7 +39,7 @@ class PointsLedger(Base, TimestampMixin):
         ),
         nullable=False,
     )
-    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    source: Mapped[str] = mapped_column(String(128), nullable=False)
     request_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("requests.id", ondelete="SET NULL", onupdate="CASCADE"),

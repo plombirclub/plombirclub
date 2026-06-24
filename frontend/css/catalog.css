@@ -12,7 +12,7 @@
 
 @media (min-width: 768px) {
   .catalog-summary {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: min(100%, 22rem);
   }
 }
 
@@ -118,6 +118,19 @@
   font-size: 0.9rem;
   color: var(--color-text-muted);
   flex: 1;
+}
+
+.reward-card__link {
+  display: inline-block;
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a5f8a;
+  text-decoration: none;
+}
+
+.reward-card__link:hover {
+  text-decoration: underline;
 }
 
 .reward-card__footer {

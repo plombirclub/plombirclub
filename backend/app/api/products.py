@@ -31,6 +31,8 @@ class ProductCreateRequest(BaseModel):
     unit_volume: str | None = Field(default=None, max_length=50)
     net_weight: str | None = Field(default=None, max_length=50)
     pieces_per_box: int | None = None
+    shelf_life: str | None = Field(default=None, max_length=100)
+    nutrition_facts: str | None = None
     distributor_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
@@ -52,6 +54,8 @@ class ProductUpdateRequest(BaseModel):
     unit_volume: str | None = Field(default=None, max_length=50)
     net_weight: str | None = Field(default=None, max_length=50)
     pieces_per_box: int | None = None
+    shelf_life: str | None = Field(default=None, max_length=100)
+    nutrition_facts: str | None = None
     is_active: bool | None = None
 
 
@@ -59,6 +63,7 @@ class ProductDistributorsRequest(BaseModel):
     distributor_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
+@router.get("")
 @router.get("/")
 async def list_products(
     page: int = Query(default=1, ge=1),
@@ -124,6 +129,8 @@ async def create_product(
             unit_volume=payload.unit_volume,
             net_weight=payload.net_weight,
             pieces_per_box=payload.pieces_per_box,
+            shelf_life=payload.shelf_life,
+            nutrition_facts=payload.nutrition_facts,
             distributor_ids=payload.distributor_ids,
         )
     except ValueError as exc:

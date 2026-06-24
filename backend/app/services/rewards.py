@@ -19,7 +19,19 @@ def _normalize_text(value: str | None) -> str | None:
     return normalized or None
 
 
+def _uploads_url(path: str | None) -> str | None:
+    if not path:
+        return None
+    normalized = path.replace("\\", "/").lstrip("/")
+    if normalized.startswith("uploads/"):
+        return f"/{normalized}"
+    return f"/uploads/{normalized}"
+
+
 def _serialize_reward(prize: Prize) -> dict[str, Any]:
+    file_url = _uploads_url(prize.image_file_path)
+    link_url = prize.image_url
+    display_image_url = file_url or link_url
     return {
         "id": str(prize.id),
         "name": prize.name,
@@ -27,7 +39,12 @@ def _serialize_reward(prize: Prize) -> dict[str, Any]:
         "type": prize.type.value,
         "is_system": prize.is_system,
         "is_active": prize.is_active,
-        "image_url": prize.image_url,
+        "image_url": link_url,
+        "image_file_path": prize.image_file_path,
+        "image_file_url": file_url,
+        "display_image_url": display_image_url,
+        "has_uploaded_image": bool(prize.image_file_path),
+        "has_link": bool(link_url),
         "created_at": prize.created_at.isoformat() if prize.created_at else None,
         "updated_at": prize.updated_at.isoformat() if prize.updated_at else None,
     }
@@ -97,6 +114,7 @@ class RewardsService:
         description: str | None,
         prize_type: PrizeType,
         image_url: str | None,
+        image_file_path: str | None = None,
         is_active: bool,
     ) -> dict[str, Any]:
         normalized_name = name.strip()
@@ -112,6 +130,7 @@ class RewardsService:
             is_system=False,
             is_active=is_active,
             image_url=_normalize_text(image_url),
+            image_file_path=_normalize_text(image_file_path),
         )
         self.db.add(reward)
         await self.db.flush()
@@ -156,6 +175,9 @@ class RewardsService:
 
         if "image_url" in updates:
             reward.image_url = _normalize_text(updates["image_url"])
+
+        if "image_file_path" in updates:
+            reward.image_file_path = _normalize_text(updates["image_file_path"])
 
         if "type" in updates:
             new_type = updates["type"]
@@ -215,7 +237,7 @@ class RewardsService:
             "already_hidden": already_hidden,
         }
 
-    async def set_system_reward_visibility(
+    async def set_reward_visibility(
         self,
         *,
         admin: User,
@@ -225,8 +247,6 @@ class RewardsService:
         reward = await self.db.scalar(select(Prize).where(Prize.id == reward_id).limit(1))
         if reward is None:
             raise LookupError("Приз не найден")
-        if not reward.is_system or reward.type != PrizeType.money:
-            raise ValueError("Настройка видимости по дистрибьюторам доступна только для СБП-приза")
 
         distributors = (
             await self.db.scalars(select(Distributor).where(Distributor.id.in_(distributor_ids)))
@@ -281,6 +301,19 @@ class RewardsService:
             "visible_distributor_names": visible_names,
         }
 
+    async def set_system_reward_visibility(
+        self,
+        *,
+        admin: User,
+        reward_id: uuid.UUID,
+        distributor_ids: list[uuid.UUID],
+    ) -> dict[str, Any]:
+        return await self.set_reward_visibility(
+            admin=admin,
+            reward_id=reward_id,
+            distributor_ids=distributor_ids,
+        )
+
     async def get_reward_visibility(
         self,
         *,
@@ -306,13 +339,14 @@ class RewardsService:
                 await self.db.scalars(select(Distributor).where(Distributor.id.in_(distributor_ids)))
             ).all()
 
+        visible_links = [link for link in links if link.is_visible]
         return {
             "reward_id": str(reward_id),
             "is_system": reward.is_system,
             "type": reward.type.value,
             "visible_distributor_ids": [str(item.id) for item in distributors],
             "visible_distributor_names": [item.name for item in distributors],
-            "restrict_by_distributors": bool(links) or reward.is_system,
+            "restrict_by_distributors": bool(visible_links),
         }
 
     async def _filter_for_user(
@@ -321,17 +355,13 @@ class RewardsService:
         items: list[dict[str, Any]],
         user_distributor_id: uuid.UUID | None,
     ) -> list[dict[str, Any]]:
-        system_ids = [
-            uuid.UUID(item["id"])
-            for item in items
-            if item["is_system"] and item["type"] == PrizeType.money.value
-        ]
-        if not system_ids:
+        if not items:
             return items
 
+        prize_ids = [uuid.UUID(item["id"]) for item in items]
         links = (
             await self.db.scalars(
-                select(PrizeDistributor).where(PrizeDistributor.prize_id.in_(system_ids))
+                select(PrizeDistributor).where(PrizeDistributor.prize_id.in_(prize_ids))
             )
         ).all()
 
@@ -341,13 +371,10 @@ class RewardsService:
 
         filtered: list[dict[str, Any]] = []
         for item in items:
-            if not (item["is_system"] and item["type"] == PrizeType.money.value):
-                filtered.append(item)
-                continue
-
             prize_id = uuid.UUID(item["id"])
             prize_links = by_prize.get(prize_id, [])
-            if not prize_links:
+            visible_links = [link for link in prize_links if link.is_visible]
+            if not visible_links:
                 filtered.append(item)
                 continue
 
@@ -355,7 +382,7 @@ class RewardsService:
                 continue
 
             visible_for_user = any(
-                link.distributor_id == user_distributor_id and link.is_visible for link in prize_links
+                link.distributor_id == user_distributor_id for link in visible_links
             )
             if visible_for_user:
                 filtered.append(item)

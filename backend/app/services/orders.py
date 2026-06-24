@@ -22,6 +22,7 @@ from app.models.prize_distributor import PrizeDistributor
 from app.models.request import Request
 from app.models.user import User
 from app.models.verification_code import VerificationCode
+from app.services.email import EmailService
 from app.services.notifications import NotificationService
 from app.services.points import PointsService
 from app.services.users import write_admin_log
@@ -118,7 +119,7 @@ class OrdersService:
             raise LookupError("Приз не найден или неактивен")
 
         if prize.is_system and prize.type == PrizeType.money:
-            await self._validate_system_prize_visibility(prize_id=prize.id, user=user)
+            await self._validate_prize_visibility(prize_id=prize.id, user=user)
 
         if not user.inn or not user.inn_verified_by_admin:
             raise ValueError("Нельзя создать заявку: ИНН не подтвержден администратором")
@@ -248,10 +249,22 @@ class OrdersService:
             self.db.add(verification)
             await self.db.commit()
 
+            if method == VerificationMethod.email:
+                email_error = await EmailService(self.db).send_sbp_verification_code(
+                    to_email=user.email,
+                    payout_phone=request_row.payout_phone,
+                    code=plain_code,
+                )
+                if email_error:
+                    raise ValueError(f"Не удалось отправить код на email: {email_error}")
+                sent_to = user.email
+            else:
+                sent_to = request_row.payout_phone
+
             response_data: dict[str, Any] = {
                 "request_id": str(request_row.id),
                 "method": method.value,
-                "sent_to": request_row.payout_phone,
+                "sent_to": sent_to,
             }
             if settings.app_env == "development":
                 response_data["debug_code"] = plain_code
@@ -524,7 +537,7 @@ class OrdersService:
             },
         }
 
-    async def _validate_system_prize_visibility(self, *, prize_id: uuid.UUID, user: User) -> None:
+    async def _validate_prize_visibility(self, *, prize_id: uuid.UUID, user: User) -> None:
         if user.distributor_id is None:
             raise ValueError("У пользователя не указан дистрибьютор")
         links = (
@@ -532,14 +545,15 @@ class OrdersService:
                 select(PrizeDistributor).where(PrizeDistributor.prize_id == prize_id)
             )
         ).all()
-        if not links:
+        visible_links = [link for link in links if link.is_visible]
+        if not visible_links:
             return
 
         visible_for_user = any(
-            link.distributor_id == user.distributor_id and link.is_visible for link in links
+            link.distributor_id == user.distributor_id for link in visible_links
         )
         if not visible_for_user:
-            raise ValueError("СБП-приз недоступен для вашего дистрибьютора")
+            raise ValueError("Приз недоступен для вашего дистрибьютора")
 
     def _validate_status_transition(
         self,

@@ -41,6 +41,7 @@ class User(Base, TimestampMixin):
     first_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     last_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     middle_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    personal_name_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     phone: Mapped[Optional[str]] = mapped_column(String(20), unique=True, nullable=True)
     inn: Mapped[Optional[str]] = mapped_column(String(12), unique=True, nullable=True)
     inn_document_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -67,6 +68,10 @@ class User(Base, TimestampMixin):
     )
     phone_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     agreements_accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    agreements_accepted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     temporary_password_changed: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

@@ -213,12 +213,19 @@
       tbody.innerHTML = pageRows
         .map(function (row) {
           var iso = rowDateIso(row);
+          var dateLabel = row.document_date_label || (iso ? formatDisplayDate(iso) : row.period_month || "—");
+          var boxesLabel =
+            row.boxes_count_label != null && row.boxes_count_label !== ""
+              ? row.boxes_count_label
+              : row.boxes_count != null
+                ? formatBoxes(row.boxes_count)
+                : "—";
           return (
             "<tr>" +
-              "<td>" + escape(iso ? formatDisplayDate(iso) : row.period_month || "—") + "</td>" +
+              "<td>" + escape(dateLabel) + "</td>" +
               "<td>" + escape(row.client_name || "—") + "</td>" +
               "<td>" + escape(row.product_name || "—") + "</td>" +
-              "<td>" + escape(row.boxes_count != null ? formatBoxes(row.boxes_count) : "—") + "</td>" +
+              "<td>" + escape(boxesLabel) + "</td>" +
               "<td>" + escape(row.role || "—") + "</td>" +
               '<td class="analytics-table__points">' + escape(Number(row.amount || 0).toLocaleString("ru-RU")) + "</td>" +
             "</tr>"

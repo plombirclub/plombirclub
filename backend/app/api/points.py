@@ -63,6 +63,16 @@ async def get_history(
     return {"success": True, "data": history}
 
 
+@router.get("/overview")
+async def get_points_overview(
+    auth: AuthContext = Depends(require_registration_complete),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    service = PointsService(db)
+    data = await service.get_overview(user_id=auth.user.id)
+    return {"success": True, "data": data}
+
+
 @router.post("/consent")
 async def give_participation_consent(
     request: Request,

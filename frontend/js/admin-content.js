@@ -2,12 +2,24 @@
   "use strict";
 
   var L = PlombirAdminLayout;
-  var state = { tab: "faq", faq: { items: [] }, instructions: { title: "", content: "", items: [] }, support: {} };
+  var LEGAL_KEYS = [
+    { id: "personal_data", label: "Согласие на обработку персональных данных (ФЗ-152)" },
+    { id: "program_rules", label: "Пользовательское соглашение" },
+    { id: "email_notifications", label: "Согласие на email-уведомления" },
+  ];
+  var state = {
+    tab: "faq",
+    faq: { items: [] },
+    instructions: { title: "", content: "", items: [] },
+    support: {},
+    legal: { documents: {} },
+  };
 
   function renderTabs(container) {
     var tabs = [
       { id: "faq", label: "FAQ" },
       { id: "instructions", label: "Инструкции" },
+      { id: "legal", label: "Юридические документы" },
       { id: "support", label: "Контакты поддержки" },
     ];
     container.innerHTML =
@@ -34,6 +46,7 @@
     var panel = document.getElementById("content-panel");
     if (state.tab === "faq") renderFaq(panel);
     else if (state.tab === "instructions") renderInstructions(panel);
+    else if (state.tab === "legal") renderLegal(panel);
     else renderSupport(panel);
   }
 
@@ -95,24 +108,60 @@
     });
   }
 
+  function ensureInstructionItems() {
+    if (!state.instructions.items) state.instructions.items = [];
+    if (!state.instructions.items.length) {
+      state.instructions.items.push({
+        id: "new-" + Date.now(),
+        title: "",
+        description: "",
+        file_path: null,
+        content_type: null,
+        sort_order: 0,
+        is_published: true,
+      });
+    }
+  }
+
   function renderInstructions(panel) {
+    ensureInstructionItems();
     panel.innerHTML =
       '<div class="admin-card admin-form-grid">' +
-        '<label class="field"><span class="field__label">Заголовок</span><input class="field__input" id="instr-title" value="' +
+        '<label class="field"><span class="field__label">Заголовок страницы</span><input class="field__input" id="instr-title" value="' +
           L.escapeHtml(state.instructions.title || "") + '"></label>' +
-        '<label class="field"><span class="field__label">Вводный текст</span><textarea class="admin-editor admin-editor--tall" id="instr-content">' +
+        '<label class="field"><span class="field__label">Вводный текст (необязательно)</span><textarea class="admin-editor admin-editor--tall" id="instr-content">' +
           L.escapeHtml(state.instructions.content || "") + "</textarea></label>" +
-        '<div class="admin-toolbar"><button type="button" class="btn btn--primary btn--sm" id="instr-add">Добавить пункт</button>' +
-        '<button type="button" class="btn btn--primary btn--sm" id="instr-save">Сохранить</button></div>' +
-        '<div id="instr-items"></div></div>';
+      "</div>" +
+      '<div class="admin-card admin-instructions-block">' +
+        '<h3 class="admin-card__title">Материалы для участников</h3>' +
+        '<p class="admin-modal__meta">Загрузите PDF или картинку (JPG, PNG, WEBP, GIF). Участник увидит просмотр с листанием страниц, как на референсе. После загрузки файла нажмите «Сохранить».</p>' +
+        '<div id="instr-items"></div>' +
+        '<div class="admin-toolbar">' +
+          '<button type="button" class="btn btn--ghost btn--sm" id="instr-add">+ Ещё один материал</button>' +
+          '<button type="button" class="btn btn--primary btn--sm" id="instr-save">Сохранить инструкции</button>' +
+        "</div>" +
+      "</div>";
     renderInstructionItems();
     document.getElementById("instr-add").addEventListener("click", function () {
-      state.instructions.items.push({ id: String(Date.now()), title: "", description: "", sort_order: state.instructions.items.length, is_published: true });
+      state.instructions.items.push({
+        id: String(Date.now()),
+        title: "",
+        description: "",
+        file_path: null,
+        content_type: null,
+        sort_order: state.instructions.items.length,
+        is_published: true,
+      });
       renderInstructionItems();
     });
     document.getElementById("instr-save").addEventListener("click", function () {
       state.instructions.title = document.getElementById("instr-title").value.trim();
       state.instructions.content = document.getElementById("instr-content").value.trim();
+      var hasFile = (state.instructions.items || []).some(function (item) { return item.file_path; });
+      if (!hasFile) {
+        L.showToast(document.getElementById("page-alert"), "Загрузите хотя бы один файл (PDF или картинку)", "error");
+        return;
+      }
       PlombirApi.put("/content/instructions", { value: state.instructions }).then(function (result) {
         if (!result.response.ok || !result.data || !result.data.success) {
           L.showToast(document.getElementById("page-alert"), PlombirApi.extractErrorMessage(result.data, "Ошибка"), "error");
@@ -128,16 +177,28 @@
     var host = document.getElementById("instr-items");
     if (!host) return;
     host.innerHTML = (state.instructions.items || []).map(function (item, index) {
+      var fileInfo = item.file_path
+        ? '<p class="admin-modal__meta admin-instruction-file-info">✓ Файл загружен: ' + L.escapeHtml(item.file_path) +
+          (item.content_type ? " (" + L.escapeHtml(item.content_type) + ")" : "") + "</p>"
+        : '<p class="admin-modal__meta admin-instruction-file-info admin-instruction-file-info--empty">Файл пока не выбран</p>';
       return (
-        '<div class="admin-card" style="margin-top:0.75rem">' +
-          '<label class="field"><span class="field__label">Заголовок</span><input class="field__input" data-instr-field="title" data-index="' + index + '" value="' +
+        '<div class="admin-card admin-instruction-item">' +
+          '<p class="admin-instruction-item__num">Материал ' + (index + 1) + "</p>" +
+          '<label class="field"><span class="field__label">Название для карточки</span><input class="field__input" data-instr-field="title" data-index="' + index + '" placeholder="Например: Инструкция для участников" value="' +
             L.escapeHtml(item.title) + '"></label>' +
-          '<label class="field"><span class="field__label">Описание</span><textarea class="admin-editor" data-instr-field="description" data-index="' + index + '">' +
+          '<label class="field"><span class="field__label">Краткое описание (необязательно)</span><textarea class="admin-editor" data-instr-field="description" data-index="' + index + '" placeholder="Короткий текст под названием">' +
             L.escapeHtml(item.description || "") + "</textarea></label>" +
-          '<button type="button" class="btn btn--danger btn--sm" data-instr-remove="' + index + '">Удалить</button>' +
+          '<label class="field admin-instruction-upload">' +
+            '<span class="field__label">Файл: PDF или изображение</span>' +
+            '<input class="field__input admin-instruction-upload__input" type="file" data-instr-upload="' + index + '" accept=".pdf,image/jpeg,image/png,image/webp,image/gif">' +
+          "</label>" +
+          fileInfo +
+          (state.instructions.items.length > 1
+            ? '<button type="button" class="btn btn--danger btn--sm" data-instr-remove="' + index + '">Удалить материал</button>'
+            : "") +
         "</div>"
       );
-    }).join("") || '<p class="admin-empty">Пункты не добавлены</p>';
+    }).join("");
 
     host.querySelectorAll("[data-instr-field]").forEach(function (el) {
       el.addEventListener("input", function () {
@@ -145,10 +206,125 @@
         state.instructions.items[idx][el.getAttribute("data-instr-field")] = el.value;
       });
     });
+    host.querySelectorAll("[data-instr-upload]").forEach(function (input) {
+      input.addEventListener("change", function () {
+        var idx = Number(input.getAttribute("data-instr-upload"));
+        var file = input.files[0];
+        if (!file) return;
+        var form = new FormData();
+        form.append("file", file);
+        PlombirApi.postForm("/content/instructions/upload", form).then(function (result) {
+          if (!result.response.ok || !result.data || !result.data.success) {
+            L.showToast(document.getElementById("page-alert"), PlombirApi.extractErrorMessage(result.data, "Ошибка загрузки"), "error");
+            return;
+          }
+          var data = result.data.data || {};
+          state.instructions.items[idx].file_path = data.file_path;
+          state.instructions.items[idx].content_type = data.content_type;
+          renderInstructionItems();
+          L.showToast(document.getElementById("page-alert"), "Файл загружен", "success");
+        });
+      });
+    });
     host.querySelectorAll("[data-instr-remove]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         state.instructions.items.splice(Number(btn.getAttribute("data-instr-remove")), 1);
         renderInstructionItems();
+      });
+    });
+  }
+
+  function ensureLegalDocuments() {
+    if (!state.legal.documents) state.legal.documents = {};
+    LEGAL_KEYS.forEach(function (entry) {
+      if (!state.legal.documents[entry.id]) {
+        state.legal.documents[entry.id] = {
+          title: entry.label,
+          text: "",
+          file_path: null,
+          content_type: null,
+        };
+      }
+    });
+  }
+
+  function renderLegal(panel) {
+    ensureLegalDocuments();
+    panel.innerHTML =
+      '<div class="admin-card admin-instructions-block">' +
+        '<h3 class="admin-card__title">Юридические документы</h3>' +
+        '<p class="admin-modal__meta">Эти документы показываются при первом входе и в профиле участника. Загрузите PDF или картинку, при необходимости добавьте текст. После изменений нажмите «Сохранить».</p>' +
+        '<div id="legal-items"></div>' +
+        '<div class="admin-toolbar">' +
+          '<button type="button" class="btn btn--primary btn--sm" id="legal-save">Сохранить документы</button>' +
+        "</div>" +
+      "</div>";
+    renderLegalItems();
+    document.getElementById("legal-save").addEventListener("click", function () {
+      PlombirApi.put("/content/legal_documents", { value: state.legal }).then(function (result) {
+        if (!result.response.ok || !result.data || !result.data.success) {
+          L.showToast(document.getElementById("page-alert"), PlombirApi.extractErrorMessage(result.data, "Ошибка"), "error");
+          return;
+        }
+        state.legal = result.data.data.value || { documents: {} };
+        ensureLegalDocuments();
+        L.showToast(document.getElementById("page-alert"), "Юридические документы сохранены", "success");
+        renderLegalItems();
+      });
+    });
+  }
+
+  function renderLegalItems() {
+    var host = document.getElementById("legal-items");
+    if (!host) return;
+    host.innerHTML = LEGAL_KEYS.map(function (entry) {
+      var item = state.legal.documents[entry.id] || {};
+      var fileInfo = item.file_path
+        ? '<p class="admin-modal__meta admin-instruction-file-info">✓ Файл загружен: ' + L.escapeHtml(item.file_path) + "</p>"
+        : '<p class="admin-modal__meta admin-instruction-file-info admin-instruction-file-info--empty">Файл пока не выбран</p>';
+      return (
+        '<div class="admin-card admin-instruction-item">' +
+          '<p class="admin-instruction-item__num">' + L.escapeHtml(entry.label) + "</p>" +
+          '<label class="field"><span class="field__label">Название для участника</span>' +
+            '<input class="field__input" data-legal-field="title" data-legal-key="' + entry.id + '" value="' +
+            L.escapeHtml(item.title || entry.label) + '"></label>' +
+          '<label class="field"><span class="field__label">Текст (если без файла)</span>' +
+            '<textarea class="admin-editor" data-legal-field="text" data-legal-key="' + entry.id + '">' +
+            L.escapeHtml(item.text || "") + "</textarea></label>" +
+          '<label class="field admin-instruction-upload"><span class="field__label">Файл: PDF или изображение</span>' +
+            '<input class="field__input admin-instruction-upload__input" type="file" data-legal-upload="' + entry.id + '" accept=".pdf,image/jpeg,image/png,image/webp,image/gif"></label>' +
+          fileInfo +
+        "</div>"
+      );
+    }).join("");
+
+    host.querySelectorAll("[data-legal-field]").forEach(function (el) {
+      el.addEventListener("input", function () {
+        var key = el.getAttribute("data-legal-key");
+        var field = el.getAttribute("data-legal-field");
+        if (!state.legal.documents[key]) state.legal.documents[key] = {};
+        state.legal.documents[key][field] = el.value;
+      });
+    });
+    host.querySelectorAll("[data-legal-upload]").forEach(function (input) {
+      input.addEventListener("change", function () {
+        var key = input.getAttribute("data-legal-upload");
+        var file = input.files[0];
+        if (!file) return;
+        var form = new FormData();
+        form.append("file", file);
+        PlombirApi.postForm("/content/legal/upload", form).then(function (result) {
+          if (!result.response.ok || !result.data || !result.data.success) {
+            L.showToast(document.getElementById("page-alert"), PlombirApi.extractErrorMessage(result.data, "Ошибка загрузки"), "error");
+            return;
+          }
+          var data = result.data.data || {};
+          if (!state.legal.documents[key]) state.legal.documents[key] = {};
+          state.legal.documents[key].file_path = data.file_path;
+          state.legal.documents[key].content_type = data.content_type;
+          renderLegalItems();
+          L.showToast(document.getElementById("page-alert"), "Файл загружен", "success");
+        });
       });
     });
   }
@@ -185,6 +361,7 @@
     return Promise.all([
       PlombirApi.get("/content/faq"),
       PlombirApi.get("/content/instructions"),
+      PlombirApi.get("/content/legal_documents"),
       PlombirApi.get("/content/support_contacts"),
     ]).then(function (results) {
       results.forEach(function (result, index) {
@@ -193,8 +370,10 @@
         }
         if (index === 0) state.faq = result.data.data.value || { items: [] };
         if (index === 1) state.instructions = result.data.data.value || { title: "", content: "", items: [] };
-        if (index === 2) state.support = result.data.data.value || {};
+        if (index === 2) state.legal = result.data.data.value || { documents: {} };
+        if (index === 3) state.support = result.data.data.value || {};
       });
+      ensureLegalDocuments();
     });
   }
 

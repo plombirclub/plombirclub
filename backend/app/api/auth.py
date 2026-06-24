@@ -1,3 +1,4 @@
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -23,8 +24,11 @@ from app.core.security import (
 from app.models.enums import VerificationMethod, VerificationTargetType
 from app.models.user import User
 from app.models.verification_code import VerificationCode
+from app.services.email import EmailService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+logger = logging.getLogger(__name__)
 
 
 class LoginRequest(BaseModel):
@@ -221,6 +225,7 @@ async def accept_agreements(
 
     user = auth.user
     user.agreements_accepted = True
+    user.agreements_accepted_at = datetime.now(UTC)
     user.is_registration_complete = _calculate_registration_complete(user)
     await db.commit()
 
@@ -228,6 +233,7 @@ async def accept_agreements(
         "success": True,
         "data": {
             "agreements_accepted": user.agreements_accepted,
+            "agreements_accepted_at": user.agreements_accepted_at.isoformat(),
             "is_registration_complete": user.is_registration_complete,
         },
     }
@@ -351,6 +357,17 @@ async def send_email_code(
         target_value=auth.user.email,
     )
 
+    email_error = await EmailService(db).send_verification_code(
+        to_email=auth.user.email,
+        phone=auth.user.phone,
+        code=code,
+    )
+    if email_error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось отправить код на email: {email_error}",
+        )
+
     response_data = {"sent_to": auth.user.email, "method": "email"}
     if settings.app_env == "development":
         response_data["debug_code"] = code
@@ -424,7 +441,6 @@ async def forgot_password(
         )
 
     user = await db.scalar(select(User).where(User.email == payload.email.lower()))
-    generated_password = None
     if user is not None and user.is_active:
         generated_password = secrets.token_urlsafe(8)
         user.password_hash = hash_password(generated_password)
@@ -432,9 +448,18 @@ async def forgot_password(
         user.is_registration_complete = _calculate_registration_complete(user)
         await db.commit()
 
+        email_error = await EmailService(db).send_forgot_password(
+            to_email=user.email,
+            temporary_password=generated_password,
+        )
+        if email_error:
+            logger.warning(
+                "forgot-password: письмо не отправлено для %s: %s",
+                user.email,
+                email_error,
+            )
+
     data = {"message": "Если аккаунт существует, временный пароль отправлен на email"}
-    if settings.app_env == "development" and generated_password:
-        data["debug_temporary_password"] = generated_password
 
     return {"success": True, "data": data}
 

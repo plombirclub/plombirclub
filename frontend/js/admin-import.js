@@ -3,6 +3,23 @@
 
   var L = PlombirAdminLayout;
 
+  var USER_RESULT_LABELS = {
+    created_count: "Создано пользователей",
+    updated_count: "Обновлено пользователей",
+    failed_count: "Ошибок",
+    emailed_count: "Писем отправлено",
+    processed_count: "Обработано строк",
+  };
+
+  var SALES_RESULT_LABELS = {
+    processed_count: "Обработано строк",
+    imported_records_count: "Начислено записей баллов",
+    overwritten_count: "Изменено сумм (перезапись)",
+    skipped_duplicates_count: "Пропущено дубликатов",
+    failed_count: "Ошибок",
+    activation_notifications_sent: "Уведомлений об активации",
+  };
+
   function renderImportPage(container) {
     container.innerHTML =
       '<div id="page-alert"></div>' +
@@ -10,7 +27,7 @@
         importBlock(
           "users",
           "Импорт пользователей",
-          "Загрузите Excel с участниками. Email — уникальный идентификатор. Импорт не перезаписывает ИНН, КНД и подтверждения.",
+          "Загрузите Excel с участниками. Email — уникальный идентификатор. Если email уже есть в системе, строка пропускается: новый пользователь не создаётся, существующий не изменяется. Импорт не перезаписывает ИНН, КНД и подтверждения. Дистрибьютор должен быть создан заранее в разделе «Дистрибьюторы».",
           "template-users",
           "import-users-file",
           "import-users-btn",
@@ -52,15 +69,53 @@
     );
   }
 
-  function formatImportResult(data) {
-    if (!data) return "Готово";
+  function formatLabeledResult(data, labels) {
     var lines = [];
-    Object.keys(data).forEach(function (key) {
+    if (data.message) {
+      lines.push(data.message);
+      lines.push("");
+    }
+    Object.keys(labels).forEach(function (key) {
       if (data[key] !== null && data[key] !== undefined) {
-        lines.push(key + ": " + data[key]);
+        lines.push(labels[key] + ": " + data[key]);
       }
     });
+    return lines;
+  }
+
+  function formatImportResult(data, type) {
+    if (!data) return "Готово";
+    if (type === "users") return formatUsersImportResult(data);
+    if (type === "sales") return formatSalesImportResult(data);
+    return formatLabeledResult(data, USER_RESULT_LABELS).join("\n");
+  }
+
+  function formatUsersImportResult(data) {
+    var lines = formatLabeledResult(data, USER_RESULT_LABELS);
+    if (Array.isArray(data.errors) && data.errors.length) {
+      lines.push("");
+      lines.push("Ошибки по строкам (также сохранены в Отчёты → Ошибки синхронизации):");
+      data.errors.forEach(function (item) {
+        var rowLabel = "Строка " + (item.row_number || "?");
+        var emailLabel = item.email ? " (" + item.email + ")" : "";
+        lines.push("— " + rowLabel + emailLabel + ": " + (item.message || "Ошибка"));
+      });
+    }
     return lines.join("\n");
+  }
+
+  function formatSalesImportResult(data) {
+    var lines = formatLabeledResult(data, SALES_RESULT_LABELS);
+    if (data.failed_count > 0) {
+      lines.push("");
+      lines.push("Подробности ошибок — в разделе «Отчёты → Ошибки синхронизации».");
+    }
+    return lines.join("\n");
+  }
+
+  function importHasErrors(data, type) {
+    if (!data || !data.failed_count || data.failed_count <= 0) return false;
+    return type === "users" || type === "sales";
   }
 
   function bindImportActions() {
@@ -116,11 +171,18 @@
         pollCeleryTask(type, data.task_id, resultBox);
         return;
       }
-      resultBox.textContent = formatImportResult(data);
+      showImportResult(resultBox, data, type);
     }).catch(function () {
       resultBox.className = "admin-import-result admin-import-result--error";
       resultBox.textContent = "Не удалось связаться с сервером";
     });
+  }
+
+  function showImportResult(resultBox, data, type) {
+    resultBox.className = importHasErrors(data, type)
+      ? "admin-import-result admin-import-result--error"
+      : "admin-import-result";
+    resultBox.textContent = formatImportResult(data, type);
   }
 
   function pollCeleryTask(type, taskId, resultBox) {
@@ -137,7 +199,7 @@
         var data = result.data.data || {};
         if (data.ready) {
           if (data.successful && data.result) {
-            resultBox.textContent = formatImportResult(data.result);
+            showImportResult(resultBox, data.result, type);
           } else {
             resultBox.className = "admin-import-result admin-import-result--error";
             resultBox.textContent = data.error || "Импорт завершился с ошибкой";

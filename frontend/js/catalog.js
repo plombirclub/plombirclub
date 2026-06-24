@@ -25,6 +25,12 @@
     return num.toLocaleString("ru-RU") + " ₽";
   }
 
+  function formatPoints(value) {
+    var num = Number(value || 0);
+    if (isNaN(num)) num = 0;
+    return num.toLocaleString("ru-RU") + " Баллов";
+  }
+
   function escape(value) {
     return PlombirLayout.escapeHtml(value || "");
   }
@@ -55,11 +61,7 @@
         '<div class="catalog-summary">' +
           '<article class="summary-card">' +
             '<p class="summary-card__label">Доступно для обмена</p>' +
-            '<p class="summary-card__value" id="summary-balance">0 ₽</p>' +
-          "</article>" +
-          '<article class="summary-card">' +
-            '<p class="summary-card__label">Курс обмена</p>' +
-            '<p class="summary-card__value">1 балл = 1 рубль</p>' +
+            '<p class="summary-card__value" id="summary-balance">0 Баллов</p>' +
           "</article>" +
         "</div>" +
         '<div id="catalog-grid" class="catalog-grid">' +
@@ -84,9 +86,21 @@
         var isMoney = reward.type === "money";
         var badge = isMoney ? "Получение по СБП" : "Электронный сертификат";
         var button = isMoney ? "Получить по СБП" : "Получить";
-        var imageHtml = reward.image_url
-          ? '<img src="' + escape(reward.image_url) + '" alt="' + escape(reward.name) + '">'
-          : '<p class="reward-card__placeholder">Изображение будет добавлено администратором</p>';
+        var hasUpload = reward.has_uploaded_image && reward.image_file_url;
+        var hasLink = reward.has_link && reward.image_url;
+        var imageHtml;
+
+        if (hasUpload) {
+          imageHtml = '<img src="' + escape(reward.image_file_url) + '" alt="' + escape(reward.name) + '">';
+        } else if (hasLink) {
+          imageHtml = '<img src="' + escape(reward.image_url) + '" alt="' + escape(reward.name) + '">';
+        } else {
+          imageHtml = '<p class="reward-card__placeholder">Изображение будет добавлено администратором</p>';
+        }
+
+        var linkHtml = hasUpload && hasLink
+          ? '<a class="reward-card__link" href="' + escape(reward.image_url) + '" target="_blank" rel="noopener noreferrer">Подробнее</a>'
+          : "";
 
         return (
           '<article class="reward-card">' +
@@ -97,6 +111,7 @@
             '<div class="reward-card__body">' +
               '<h2 class="reward-card__title">' + escape(reward.name) + "</h2>" +
               '<p class="reward-card__description">' + escape(reward.description || "Обменяйте баллы на приз из каталога.") + "</p>" +
+              linkHtml +
               '<div class="reward-card__footer">' +
                 '<button type="button" class="btn btn--primary reward-action" data-reward-id="' + escape(reward.id) + '">' + button + "</button>" +
               "</div>" +
@@ -459,7 +474,7 @@
       }
       var balance = result.data.data || {};
       state.balanceAvailable = Number(balance.available || 0);
-      summary.textContent = formatRub(state.balanceAvailable);
+      summary.textContent = formatPoints(state.balanceAvailable);
     });
   }
 
