@@ -18,7 +18,13 @@
         try {
           data = JSON.parse(text);
         } catch (_err) {
-          data = { success: false, error: { message: "Некорректный ответ сервера" } };
+          var message = "Некорректный ответ сервера";
+          if (response.status === 413) {
+            message = "Файл слишком большой. Максимум — 100 МБ.";
+          } else if (response.status >= 502 && response.status <= 504) {
+            message = "Сервер временно недоступен. Попробуйте позже.";
+          }
+          data = { success: false, error: { message: message } };
         }
       }
       return { response: response, data: data };
